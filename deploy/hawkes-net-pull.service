@@ -1,0 +1,8 @@
+[Unit]
+Description=Hawkes Net: deploy hawkesgen main once its Hawkes Net tests pass on this box
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /srv/hawkes/hawkesnet/deploy/pull.mjs
+TimeoutStartSec=20min

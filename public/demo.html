@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hawkes Net demo</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --ink: #14161b; --muted: #5d6470; --line: #e3e6ea; --accent: #2f6fed; --ok: #16a34a; --warn: #d97706; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #101216; --card: #171a20; --ink: #eef0f3; --muted: #9aa1ad; --line: #272b33; --accent: #6c9bff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 Inter, system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 320px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 0; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  canvas { width: 100%; aspect-ratio: 16 / 10; display: block; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); touch-action: none; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; } dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+  li { display: flex; gap: 8px; align-items: center; } .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .pill { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.relay { color: var(--accent); border-color: var(--accent); } .pill.p2p { color: var(--ok); border-color: var(--ok); }
+  #log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 140px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>Hawkes Net</h1>
+    <p>Everyone on this page with the same room plays together. Move with the arrow keys or drag. Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
+    <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
+    <div class="row">
+      <button class="primary" id="share">Copy invite link</button>
+      <button id="bots">Add 5 bots</button>
+      <button id="migrate">Move to the relay</button>
+      <button id="leave">Leave</button>
+    </div>
+  </section>
+  <aside class="card">
+    <dl>
+      <dt>Room</dt><dd id="room"></dd>
+      <dt>You</dt><dd id="me">connecting…</dd>
+      <dt>Transport</dt><dd><span class="pill" id="transport">…</span></dd>
+      <dt>Host</dt><dd id="host"></dd>
+      <dt>Round trip</dt><dd id="rtt">–</dd>
+      <dt>Down / up</dt><dd id="bw">–</dd>
+      <dt>Bots here</dt><dd id="botn">0</dd>
+    </dl>
+    <ul id="peers"></ul>
+    <div id="log"></div>
+  </aside>
+</main>
+<script type="module">
+  import { join } from '/sdk/hawkes-net.mjs';
+  const q = new URLSearchParams(location.search);
+  const room = q.get('room') || `demo-${Math.random().toString(36).slice(2, 7)}`;
+  if (!q.get('room')) history.replaceState(null, '', `?room=${room}${q.get('t') ? `&t=${q.get('t')}` : ''}`);
+  const transport = q.get('t') || 'auto';
+  const p2pMax = Number(q.get('p2p') || 8);
+  const $ = (id) => document.getElementById(id);
+  $('room').textContent = room; $('p2pmax').textContent = p2pMax;
+  const log = (s) => { const el = $('log'); el.textContent = `${new Date().toLocaleTimeString()} ${s}\n${el.textContent}`.slice(0, 4000); };
+  const W = 960, H = 600;
+  const pos = { x: 100 + Math.random() * 760, y: 100 + Math.random() * 400 };
+  const keys = new Set();
+  addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) { keys.add(e.key); e.preventDefault(); } });
+  addEventListener('keyup', (e) => keys.delete(e.key));
+  const cv = $('c'), g = cv.getContext('2d');
+  cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = ((e.clientX - r.left) / r.width) * W; pos.y = ((e.clientY - r.top) / r.height) * H; });
+  const config = { p2pMax, maxPlayers: 64, profile: 'light' };
+  const net = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
+  window.hawkesNetDemo = net;
+  log(`joined as ${net.id} (${net.transport})`);
+  net.when('transport', (e) => log(`room moved: ${e.from} -> ${e.to} (${e.why})`));
+  net.when('peer:join', (p) => log(`${p.name || p.id} joined`));
+  net.when('peer:leave', (e) => log(`${e.peer.name || e.peer.id} left (${e.reason})`));
+  net.when('host', (e) => log(`host is now ${e.host}`));
+  net.when('problem', (e) => log(`problem: ${e.code} ${e.detail}`));
+  const tracks = new Map();
+  net.onPose((id, s, at) => { let t = tracks.get(id); if (!t) tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] }))); t.push(at, [s.p[0], s.p[1], s.p[2]], id); });
+  // Bots: more players in this page (no singleton), wandering.
+  const bots = [];
+  $('bots').onclick = async () => {
+    for (let i = 0; i < 5; i++) {
+      const b = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: `Bot ${bots.length + 1}`, role: 'player', config, leaveOnHide: true, sub: `bot-${Math.random()}` });
+      bots.push({ net: b, x: Math.random() * W, y: Math.random() * H, a: Math.random() * 6.28 });
+      $('botn').textContent = bots.length;
+    }
+  };
+  $('migrate').onclick = () => net.migrate('game asked');
+  $('leave').onclick = async () => { for (const b of bots) await b.net.leave(); await net.leave(); log('left'); };
+  $('share').onclick = () => { navigator.clipboard?.writeText(location.href); $('share').textContent = 'Copied'; setTimeout(() => ($('share').textContent = 'Copy invite link'), 1500); };
+  let last = performance.now(), lastStats = { d: 0, u: 0, t: performance.now() };
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    const sp = 260 * dt;
+    if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
+    pos.x = Math.max(10, Math.min(W - 10, pos.x)); pos.y = Math.max(10, Math.min(H - 10, pos.y));
+    net.pose([pos.x, 0, pos.y], 0);
+    for (const b of bots) { b.a += (Math.random() - 0.5) * 0.3; b.x += Math.cos(b.a) * 120 * dt; b.y += Math.sin(b.a) * 120 * dt; if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a; b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y)); b.net.pose([b.x, 0, b.y], 0); }
+    g.clearRect(0, 0, W, H);
+    g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
+    for (const [id, tr] of tracks) {
+      const pr = net.peers.get(id);
+      if (!pr) { tracks.delete(id); continue; }
+      const s = tr.sample();
+      if (!s) continue;
+      g.fillStyle = pr.color || '#888'; g.beginPath(); g.arc(s[0], s[2], 9, 0, 7); g.fill();
+      g.fillStyle = getComputedStyle(document.body).color; g.fillText(pr.name || id, s[0], s[2] - 14);
+    }
+    g.fillStyle = net.color || '#2f6fed'; g.beginPath(); g.arc(pos.x, pos.y, 11, 0, 7); g.fill();
+    g.strokeStyle = getComputedStyle(document.body).color; g.lineWidth = 2; g.stroke();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  setInterval(() => {
+    const s = net.stats();
+    const t = performance.now(), dts = (t - lastStats.t) / 1000;
+    $('bw').textContent = `${((s.downBytes - lastStats.d) / dts / 1024).toFixed(1)} / ${((s.upBytes - lastStats.u) / dts / 1024).toFixed(1)} KB/s`;
+    lastStats = { d: s.downBytes, u: s.upBytes, t };
+    $('me').textContent = `${net.name} (${net.id})`;
+    const tp = $('transport'); tp.textContent = net.transport; tp.className = `pill ${net.transport}`;
+    $('host').textContent = net.isHost ? 'you' : (net.peers.get(net.host)?.name || net.host || '–');
+    $('rtt').textContent = s.rttMs === null ? (net.isHost && net.transport === 'p2p' ? 'you host' : '–') : `${s.rttMs} ms`;
+    $('peers').innerHTML = '';
+    for (const p of [...net.peers.values()].sort((a, b) => a.ord - b.ord)) {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="dot" style="background:${p.color || '#888'}"></span><span style="flex:1"></span><span class="pill"></span>`;
+      li.children[1].textContent = p.name || p.id;
+      li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? 'linked' : p.route;
+      $('peers').appendChild(li);
+    }
+  }, 500);
+</script>
+</body>
+</html>

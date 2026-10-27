@@ -1,0 +1,43 @@
+# The Hawkes Net box (net/deploy/setup.mjs installs it). Players' WebSockets and ticket requests come straight here
+# (no CloudFront: J, 2026-10-25); Caddy holds the certificate and passes everything to net/src/hub.ts on 127.0.0.1:8800.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
+net.hawkesgen.com {
+	encode {
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+		}
+		gzip
+	}
+	request_body {
+		max_size 4MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	reverse_proxy 127.0.0.1:8800 {
+		header_up X-Forwarded-For {remote_host}
+		header_up -Cookie
+		flush_interval -1
+		transport http {
+			keepalive 2m
+		}
+	}
+	log {
+		output file /var/log/caddy/net-access.log {
+			roll_size 50MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
