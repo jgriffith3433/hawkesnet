@@ -102,6 +102,9 @@ export interface Track {
   sample(at?: number): number[] | null;
   [k: string]: unknown;
 }
+/** Smooth playback of snapshots: o { pos: [i, i, i], vel, euler, yaw: [i], quat, maxAhead } (indexes into the values);
+ *  env.clock: the room's clock (room.now). room.sync.track(o) makes one on a room's clock. */
+export declare const Track: { new (o?: Record<string, unknown>, env?: { clock?: () => number }): Track };
 
 export interface Sync {
   /** A shared document (a score, a door): joiners get its newest copy. */
