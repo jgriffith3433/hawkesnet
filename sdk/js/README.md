@@ -28,7 +28,7 @@ net.onPose((id, state) => moveAvatar(id, state.p, state.y));
   to net.hawkesgen.com. Set it on your staging site to point the whole game at another Hawkes Net, with no code change.
 - **Types:** `hawkes-net.d.ts` ships with the package.
 - **No dependencies.** Install it from npm, or from GitHub with a version tag
-  (`"@hawkesgen/net": "github:jgriffith3433/hawkesnet-js#v1.2.1"`). It also loads straight from
+  (`"@hawkesgen/net": "https://github.com/jgriffith3433/hawkesnet-js/archive/refs/tags/v1.2.1.tar.gz"`). It also loads straight from
   `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`.
 
 Docs: [net.hawkesgen.com](https://net.hawkesgen.com) > Docs. License: MIT.

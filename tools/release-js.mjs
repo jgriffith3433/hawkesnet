@@ -1,5 +1,5 @@
 // Publishes the JS SDK (sdk/js, @hawkesgen/net) to its public repo, jgriffith3433/hawkesnet-js, tagged v<version>, so
-// games depend on it by version: "@hawkesgen/net": "github:jgriffith3433/hawkesnet-js#v1.2.1" (npm once it is there).
+// games depend on it by version: "@hawkesgen/net": "https://github.com/jgriffith3433/hawkesnet-js/archive/refs/tags/v1.2.1.tar.gz" (npm once it is there).
 // sdk/js stays the source (the relay nodes run its core); the public repo is a copy of its files at the root.
 //
 //   node tools/release-js.mjs            copy, commit and tag the version in sdk/js/package.json; push with --push
@@ -34,5 +34,5 @@ console.log(`hawkesnet-js: ${tag} at ${git('rev-parse', '--short', 'HEAD')}`);
 if (push) {
   git('push', '-q', 'origin', 'HEAD:main');
   git('push', '-q', 'origin', tag);
-  console.log(`pushed: "@hawkesgen/net": "github:jgriffith3433/hawkesnet-js#${tag}"`);
+  console.log(`pushed: "@hawkesgen/net": "https://github.com/jgriffith3433/hawkesnet-js/archive/refs/tags/${tag}.tar.gz"`);
 } else console.log('not pushed (--push to publish)');
