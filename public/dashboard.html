@@ -217,12 +217,14 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
   const ago = (t) => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`; };
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const kb = (b) => (b > 1e6 ? `${num(b / 1e6, 1)} MB` : `${num(b / 1e3, 1)} KB`);
-  // The portal: hawkesgen.com, or ?portal= on a test copy of this page (not on the real one).
+  // The portal: hawkesgen.com; on Studio's beta (hawkesnet.hawkesgen.com) the portal's beta, with its own test accounts
+  // (beta never signs in to live); or ?portal= on a test copy of this page (not on the real one).
   const asked = new URLSearchParams(location.search).get('portal');
-  const PORTAL = location.hostname !== 'net.hawkesgen.com' && asked ? asked.replace(/\/+$/, '') : 'https://hawkesgen.com';
+  const BETA_PORTAL = { 'hawkesnet.hawkesgen.com': 'https://hawkesgenwebsite.hawkesgen.com' }[location.hostname];
+  const PORTAL = location.hostname !== 'net.hawkesgen.com' && asked ? asked.replace(/\/+$/, '') : BETA_PORTAL ?? 'https://hawkesgen.com';
   const api = async (method, path, body) => {
     const r = await fetch(`${PORTAL}${path}`, { method, credentials: 'include', headers: body !== undefined ? { 'Content-Type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined }).catch(() => null);
-    if (!r) return { status: 0, data: { error: 'hawkesgen.com is not answering' } };
+    if (!r) return { status: 0, data: { error: `${new URL(PORTAL).host} is not answering` } };
     return { status: r.status, data: await r.json().catch(() => ({})) };
   };
 
