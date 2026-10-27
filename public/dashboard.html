@@ -162,7 +162,7 @@ const net = await join('match-7', { ticket });</code></pre>
   <p class="note">Keep the key on your server. <code>sub</code> is your own id for the player: the same person reconnecting keeps their place, and the project's Rooms tab can put them out by it.</p>
 
   <h3 id="unity">Unity</h3>
-  <p>Package Manager &gt; + &gt; <b>Add package from git URL</b>: <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.0</code> (or the tarball, <a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>, with <b>Add package from tarball</b>). Source and docs: <a href="https://github.com/jgriffith3433/hawkesnet-unity">github.com/jgriffith3433/hawkesnet-unity</a> (MIT); the Asset Store listing is in review. The same lobby in C#:</p>
+  <p>Package Manager &gt; + &gt; <b>Add package from git URL</b>: <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.1</code> (or the tarball, <a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>, with <b>Add package from tarball</b>). Source and docs: <a href="https://github.com/jgriffith3433/hawkesnet-unity">github.com/jgriffith3433/hawkesnet-unity</a> (MIT); the Asset Store listing is in review. The same lobby in C#:</p>
 <pre><code>var lobby = new HawkesNetLobby(new HawkesNetOptions { project = "your-project", name = "Ada" }, "mygame.com");
 lobby.PeerJoined += (id, name) =&gt; Spawn(id, name);
 lobby.PoseChanged += (id, pose) =&gt; Move(id, pose.position, pose.yaw);
@@ -598,7 +598,7 @@ lob.onPose((peer, s) =&gt; moveAvatar(peer, s.p, s.y));
 lob.join('lobby');
 // every frame: lob.pose([x, y, z], yaw);</code></pre>
       <h3>Unity</h3>
-      <p><span class="note">Package Manager &gt; + &gt; Add package from git URL:</span> <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.0</code> <span class="note">· or <a href="/sdk/com.hawkes.net.tgz">the tarball</a> · Asset Store listing in review</span></p>
+      <p><span class="note">Package Manager &gt; + &gt; Add package from git URL:</span> <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.1</code> <span class="note">· or <a href="/sdk/com.hawkes.net.tgz">the tarball</a> · Asset Store listing in review</span></p>
 <pre><code>var lobby = new HawkesNetLobby(new HawkesNetOptions { project = "${esc(d.id)}", name = playerName }, "${esc(host)}");
 lobby.Join("lobby");</code></pre>
       <h3>Your server (tickets with your key)</h3>
