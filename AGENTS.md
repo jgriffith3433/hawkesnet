@@ -7,9 +7,11 @@ folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone rep
 
 ## Hard rules
 
-- **Pushing `main` deploys to net.hawkesgen.com** (`deploy/pull.mjs` on the box, every 2 minutes: tests on a clean copy,
-  restart with the relay draining, health check, back on failure). Push `main` only with J's OK, after `npm run typecheck`
-  and `npm test`. Commit only your own files.
+- **Work goes to `beta`; `main` is live.** Hawkes Studio has hawkesnet as a product (products.json `hawkesnet`): it runs
+  beta as an app (its own data folder and Gen key), playtests it, and going live is the Go live page's card (J's tap, or
+  `DEPLOY hawkesnet`), which fast-forwards `main` to the playtested beta commit. The box then deploys `main` itself
+  (`deploy/pull.mjs`, every 2 minutes: tests on a clean copy, restart with the relay draining, health check, back on
+  failure). Never push `main` by hand. Run `npm run typecheck` and `npm test` first. Commit only your own files.
 - **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping): erasable syntax only (no enums, no
   namespaces, no parameter properties), imports end in `.ts`.
 - **One core, two places.** `sdk/js/hawkes-net-core.mjs` runs in relay nodes and in a peer-to-peer host's page. A change
