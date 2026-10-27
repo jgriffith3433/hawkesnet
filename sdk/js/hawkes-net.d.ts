@@ -32,7 +32,7 @@ export interface JoinOptions {
   role?: 'player' | 'spectator' | 'bot' | 'test';
   /** The room's shape if this join opens it. */
   config?: RoomConfig;
-  /** The Hawkes Net service (default https://net.hawkesgen.com). */
+  /** The Hawkes Net service (default `defaultEndpoint()`: https://net.hawkesgen.com, or the page's `globalThis.HAWKES_NET_ENDPOINT`). */
   endpoint?: string;
   /** A Gen API key: servers, bots and tests only, never a page. */
   key?: string;
@@ -237,3 +237,6 @@ export declare function lobby(o?: LobbyOptions): Lobby;
 
 declare const _default: { join: typeof join; lobby: typeof lobby; VERSION: string; protocols: readonly number[]; Track: unknown; Links: unknown };
 export default _default;
+
+/** The service a join uses when it names none: `globalThis.HAWKES_NET_ENDPOINT` when the page sets it to an origin, else https://net.hawkesgen.com. */
+export declare function defaultEndpoint(): string;

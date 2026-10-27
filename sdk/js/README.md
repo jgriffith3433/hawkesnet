@@ -24,7 +24,11 @@ net.onPose((id, state) => moveAvatar(id, state.p, state.y));
   when one is full, and rejoining by itself.
 - **In the background:** `background(fn)` keeps your game's step running while the page has no animation frames, and the
   room marks a hidden player `away` (`peer:away`); an away host hands the room to a present player.
+- **Staging:** a join with no `endpoint` goes to `globalThis.HAWKES_NET_ENDPOINT` when the page sets it (an origin), else
+  to net.hawkesgen.com. Set it on your staging site to point the whole game at another Hawkes Net, with no code change.
 - **Types:** `hawkes-net.d.ts` ships with the package.
-- **No dependencies.** It also loads straight from `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`.
+- **No dependencies.** Install it from npm, or from GitHub with a version tag
+  (`"@hawkesgen/net": "github:jgriffith3433/hawkesnet-js#v1.2.1"`). It also loads straight from
+  `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`.
 
 Docs: [net.hawkesgen.com](https://net.hawkesgen.com) > Docs. License: MIT.
