@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 (2026-10-26)
+
+- **The Editor and desktop builds join too.** Outside WebGL a managed client (`HawkesNetClient`: .NET WebSocket and
+  HTTP, no dependencies) joins the same rooms on the relay with Hawkes Net's JSON protocol: messages, text, poses,
+  peers, the host, the shared clock, away. In the Editor, with no `ticketUrl` or `key`, it joins your project's test
+  rooms (`t-...`) with no key, so Play mode just works; a desktop build uses `ticketUrl` (your server) or, for servers
+  and bots only, `key`.
+- `HawkesNetOptions.key` and `configJson`. `HawkesNet.Count` works outside WebGL too.
+- The package's home is its own repo, `jgriffith3433/hawkesnet-unity` (MIT).
+
 ## 0.4.0 (2026-10-26)
 
 - **In the background** (a hidden tab, a minimised or covered window): the room stays at full speed (the web SDK's

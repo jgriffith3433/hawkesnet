@@ -17,7 +17,7 @@ folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone rep
   `TAG` number). Bump `VERSION` in the core and `sdk/js/package.json` together when behaviour changes.
 - **The SDK is public** (`@hawkesgen/net`, MIT); this repo is private. Never put a secret, a project's key or anything
   about the box in `sdk/`.
-- **Consumers:** games keep a copy of `sdk/js` or install `@hawkesgen/net`; Unity games embed `sdk/unity/com.hawkes.net`
+- **Consumers:** games keep a copy of `sdk/js` or install `@hawkesgen/net`; Unity games install `com.hawkes.net` from **hawkesnet-unity** (public, its home; `sdk/unity/` here is a copy for the download at `/sdk/com.hawkes.net.tgz` and the bridge's test: copy it again after a release there)
   (`Packages/com.hawkes.net`) and load the SDK from `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`. After an SDK change,
   tell the products that keep a copy (Dose Of Destruction `src/game/net/hawkes/`, the portal `public/play/`, Yooba Land
   and Sick Of It's `Packages/com.hawkes.net`).

@@ -33,6 +33,12 @@ namespace Hawkes
         /// keep playing in the background.</summary>
         public bool leaveOnHide = true;
         public bool log = true;
+        /// <summary>Outside WebGL only (the Editor, desktop builds): a Hawkes Gen API key for servers, bots and tests. Never
+        /// ship one in a game: players' builds use ticketUrl. With neither, the Editor joins its project's test rooms
+        /// (t-...) through the localhost door.</summary>
+        public string key = "";
+        /// <summary>The room's shape if this join creates it, as JSON (e.g. {"maxPlayers":8}); empty for the project's.</summary>
+        public string configJson = "";
 
         public HawkesNetOptions Copy() => (HawkesNetOptions)MemberwiseClone();
     }
@@ -232,11 +238,11 @@ namespace Hawkes
     }
 
     /// <summary>
-    /// Hawkes Net multiplayer for Unity WebGL (Hawkes Gen docs/net.md): the web SDK runs in the page and this is its C#
-    /// face. HawkesNet.Join("lobby", new HawkesNetOptions { ticketUrl = "https://mygame.example/ticket", name = "Ada" })
-    /// gives a room; handle OnReady, On("chat", ...), read Poses (or OnPose) each frame, call Pose(...) with yours. Outside a
-    /// WebGL build (the Editor included) Join reports a "webgl-only" problem and nothing is sent. Most games want the
-    /// shared-room layer on top of this, HawkesNetLobby, and many the drop-in avatars, HawkesNetAvatars.
+    /// Hawkes Net multiplayer for Unity (https://net.hawkesgen.com). In a WebGL build the web SDK runs in the page and this
+    /// is its C# face; in the Editor and desktop builds a managed client (HawkesNetClient) joins the same rooms on the relay.
+    /// HawkesNet.Join("lobby", new HawkesNetOptions { ticketUrl = "https://mygame.example/ticket", name = "Ada" })
+    /// gives a room; handle OnReady, On("chat", ...), read Poses (or OnPose) each frame, call Pose(...) with yours. Most
+    /// games want the shared-room layer on top of this, HawkesNetLobby, and many the drop-in avatars, HawkesNetAvatars.
     /// </summary>
     public static class HawkesNet
     {
@@ -252,7 +258,7 @@ namespace Hawkes
         [DllImport("__Internal")] static extern void HawkesNet_Count(int id, string endpoint, string project, string rooms, string receiver);
         [DllImport("__Internal")] static extern void HawkesNet_SetAway(int handle, bool on);
         [DllImport("__Internal")] static extern int HawkesNet_RunInBackground(bool on, string sdkUrl);
-        /// <summary>A WebGL build: the page's SDK carries the rooms. Elsewhere (the Editor, tests) nothing is sent.</summary>
+        /// <summary>A WebGL build: the page's SDK carries the rooms. Elsewhere the managed client does.</summary>
         public static readonly bool Live = true;
 #else
         static void HawkesNet_Join(int handle, string room, string optionsJson, string receiver) { }
@@ -271,6 +277,8 @@ namespace Hawkes
 
         const string ReceiverName = "HawkesNet";
         static readonly Dictionary<int, HawkesNetRoom> rooms = new Dictionary<int, HawkesNetRoom>();
+        /// <summary>Outside WebGL: each room's managed client, by handle.</summary>
+        static readonly Dictionary<int, HawkesNetClient> managed = new Dictionary<int, HawkesNetClient>();
         static readonly Dictionary<int, Action<bool, Dictionary<string, int>>> counts = new Dictionary<int, Action<bool, Dictionary<string, int>>>();
         static int next;
         static Receiver receiver;
@@ -309,7 +317,14 @@ namespace Hawkes
             rooms[r.handle] = r;
             if (!Live)
             {
-                receiver.Later(r, new Event { e = "error", reason = "webgl-only", data = "Hawkes Net runs in WebGL builds (the web SDK in the page)" });
+                var c = new HawkesNetClient(r.handle, room, new HawkesNetClientOptions
+                {
+                    project = options.project, name = options.name, role = options.role, ticketUrl = options.ticketUrl, key = options.key,
+                    endpoint = string.IsNullOrEmpty(options.endpoint) ? "https://net.hawkesgen.com" : options.endpoint,
+                    configJson = options.configJson, ticketCredentials = options.ticketCredentials, sub = DeviceSub(),
+                });
+                managed[r.handle] = c;
+                c.Start();
                 return r;
             }
             HawkesNet_Join(r.handle, room, JsonUtility.ToJson(options), ReceiverName);
@@ -326,22 +341,60 @@ namespace Hawkes
             Ensure();
             int id = ++next;
             counts[id] = done;
-            if (!Live) { receiver.LaterCount(id, "{\"ok\":false,\"error\":\"webgl-only\"}"); return; }
+            if (!Live) { CountManaged(id, endpoint, project, roomNames); return; }
             HawkesNet_Count(id, endpoint ?? "", project ?? "", string.Join(",", roomNames ?? new string[0]), ReceiverName);
         }
 
-        internal static bool Send(int h, string kind, string json, bool reliable, string to) => Live && HawkesNet_Send(h, kind, json, reliable, to) == 1;
-        internal static bool SendText(int h, string kind, string text, bool reliable, string to) => Live && HawkesNet_SendText(h, kind, text, reliable, to) == 1;
-        internal static void Pose(int h, Vector3 p, float yaw, string extra) { if (Live) HawkesNet_Pose(h, p.x, p.y, p.z, yaw * Mathf.Deg2Rad, extra ?? ""); } // radians on the wire
-        internal static double Now(int h) => HawkesNet_Now(h);
-        internal static void Migrate(int h) { if (Live) HawkesNet_Migrate(h); }
-        internal static void SetAway(int h, bool away) { if (Live) HawkesNet_SetAway(h, away); }
+        static HawkesNetClient M(int h) => managed.TryGetValue(h, out var c) ? c : null;
+        internal static bool Send(int h, string kind, string json, bool reliable, string to) => Live ? HawkesNet_Send(h, kind, json, reliable, to) == 1 : M(h)?.Send(kind, json, reliable, to) == true;
+        internal static bool SendText(int h, string kind, string text, bool reliable, string to) => Live ? HawkesNet_SendText(h, kind, text, reliable, to) == 1 : M(h)?.SendText(kind, text, reliable, to) == true;
+        internal static void Pose(int h, Vector3 p, float yaw, string extra) // radians on the wire
+        {
+            if (Live) HawkesNet_Pose(h, p.x, p.y, p.z, yaw * Mathf.Deg2Rad, extra ?? "");
+            else M(h)?.Pose(p.x, p.y, p.z, yaw * Mathf.Deg2Rad, extra ?? "");
+        }
+        internal static double Now(int h) => Live ? HawkesNet_Now(h) : M(h)?.Now() ?? UnixMs();
+        internal static void Migrate(int h) { if (Live) HawkesNet_Migrate(h); } // (managed rooms are on the relay already)
+        internal static void SetAway(int h, bool away) { if (Live) HawkesNet_SetAway(h, away); else M(h)?.SetAway(away); }
         internal static void Leave(HawkesNetRoom r)
         {
             rooms.Remove(r.handle);
             if (Live) HawkesNet_Leave(r.handle);
+            else if (managed.TryGetValue(r.handle, out var c)) { managed.Remove(r.handle); c.Leave(); }
             r.Status = "closed";
             if (r.ClosedBecause.Length == 0) r.ClosedBecause = "left";
+        }
+
+        /// <summary>A stable id for this device (PlayerPrefs), so a player keeps their place across reconnects.</summary>
+        static string DeviceSub()
+        {
+            const string k = "hawkesNet.sub";
+            var v = PlayerPrefs.GetString(k, "");
+            if (v.Length == 0) { v = Guid.NewGuid().ToString("N").Substring(0, 24); PlayerPrefs.SetString(k, v); }
+            return v;
+        }
+
+        static readonly System.Collections.Concurrent.ConcurrentQueue<string> managedCounts = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        static void CountManaged(int id, string endpoint, string project, IList<string> roomNames)
+        {
+            var url = (string.IsNullOrEmpty(endpoint) ? "https://net.hawkesgen.com" : endpoint.TrimEnd('/')) + "/v1/net/counts?project=" + Uri.EscapeDataString(project ?? "") + "&rooms=" + Uri.EscapeDataString(string.Join(",", roomNames ?? new string[0]));
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    using (var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) })
+                    {
+                        var res = await http.GetAsync(url);
+                        var text = await res.Content.ReadAsStringAsync();
+                        var j = NetJson.Parse(text);
+                        var answer = new Dictionary<string, object> { ["id"] = (double)id, ["ok"] = res.IsSuccessStatusCode };
+                        if (res.IsSuccessStatusCode) answer["rooms"] = NetJson.Obj(j, "rooms") ?? new Dictionary<string, object>();
+                        else answer["error"] = NetJson.Str(j, "error", "refused");
+                        managedCounts.Enqueue(NetJson.Write(answer));
+                    }
+                }
+                catch (Exception e) { managedCounts.Enqueue(NetJson.Write(new Dictionary<string, object> { ["id"] = (double)id, ["ok"] = false, ["error"] = e.Message })); }
+            });
         }
 
         static void Ensure()
@@ -419,6 +472,12 @@ namespace Hawkes
                 catch (Exception x) { Debug.LogException(x); }
             }
 
+            void OnApplicationQuit()
+            {
+                foreach (var c in managed.Values) c.Leave();
+                managed.Clear();
+            }
+
             // Called from the page: SendMessage('HawkesNet', 'OnNetCount', json).
             void OnNetCount(string json) => Answer(json);
 
@@ -441,7 +500,16 @@ namespace Hawkes
                     laterCounts.Clear();
                     foreach (var json in now) Answer(json);
                 }
-                if (!Live) return;
+                if (!Live)
+                {
+                    while (managedCounts.TryDequeue(out var cj)) Answer(cj);
+                    foreach (var kv in new List<KeyValuePair<int, HawkesNetClient>>(managed))
+                    {
+                        while (kv.Value.Events.TryDequeue(out var json)) OnNet(json);
+                        if (rooms.TryGetValue(kv.Key, out var mr)) { var mp = kv.Value.TakePoses(); if (mp != null) mr.ReadPoses(mp); }
+                    }
+                    return;
+                }
                 foreach (var r in new List<HawkesNetRoom>(rooms.Values))
                 {
                     var s = HawkesNet_Poses(r.handle);

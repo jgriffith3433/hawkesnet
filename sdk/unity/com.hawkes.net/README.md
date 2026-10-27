@@ -1,7 +1,13 @@
-# Hawkes Net for Unity WebGL
+# Hawkes Net for Unity
 
-Multiplayer for Unity WebGL games on Hawkes Net (https://net.hawkesgen.com): peer to peer while a room is small, the
-relay when it grows, moved between them without anyone reconnecting. Three layers; most games use the first or second.
+Multiplayer for Unity games on Hawkes Net (https://net.hawkesgen.com). WebGL builds run Hawkes Net's web SDK in the page
+(the relay, or peer to peer while a room is small where your project allows it); **the Editor and desktop builds join the
+same rooms on the relay with a managed client**, so you can try it in Play mode. Three layers; most games use the first
+or second.
+
+**In the Editor:** with no `ticketUrl` or `key`, a join goes to your project's test rooms (`t-...`) with no key: press
+Play. **A desktop build:** set `ticketUrl` to your server's ticket route (it asks hawkesgen.com with your API key). `key`
+is for servers, bots and tests only: never ship a key in a game.
 
 ## Your own game: getting in
 
