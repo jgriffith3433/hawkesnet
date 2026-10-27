@@ -109,12 +109,21 @@ export async function startHub(o: HubOptions = {}) {
   projects.startSampler(); // players online a minute, per project (the dashboard's line)
   const demo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo.html');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
+  // What this process runs: the repo and its commit (from .git, read once), so a deploy can be seen from outside.
+  const build = (() => {
+    try {
+      const git = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.git');
+      let head = fs.readFileSync(path.join(git, 'HEAD'), 'utf8').trim();
+      if (head.startsWith('ref: ')) head = fs.readFileSync(path.join(git, head.slice(5)), 'utf8').trim();
+      return { repo: 'hawkesnet', commit: head.slice(0, 7) };
+    } catch { return { repo: 'hawkesnet', commit: '' }; }
+  })();
   const server = http.createServer((req, res) => {
     const route = new URL(req.url ?? '/', 'http://x').pathname;
     if (route === '/healthz') {
       const st = svc.status();
       res.writeHead(st.up ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return void res.end(JSON.stringify({ ok: st.up, service: 'hawkes-net', version: st.version, usageWaiting: outbox.length }));
+      return void res.end(JSON.stringify({ ok: st.up, service: 'hawkes-net', version: st.version, ...build, usageWaiting: outbox.length }));
     }
     // The front door is the developer dashboard: docs, and with a hawkesgen.com sign-in your key, rooms and usage (the page
     // reads them from the portal, which allows this origin).
