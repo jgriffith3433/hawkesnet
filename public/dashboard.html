@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hawkes Net</title>
-<meta name="description" content="Multiplayer for web games. Your hawkesgen.com account, your projects, their players, rooms and tickets live, the SDK for the web, Babylon and Unity, and the docs.">
+<meta name="description" content="Multiplayer for web, Babylon.js and Unity games. Your hawkesgen.com account, your projects, their players, rooms and tickets live, the SDKs and the docs.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='9' cy='16' r='5' fill='%232f6fed'/%3E%3Ccircle cx='23' cy='9' r='4' fill='%2316a34a'/%3E%3Ccircle cx='23' cy='23' r='4' fill='%2316a34a'/%3E%3Cpath d='M13 14l6-4M13 18l6 4' stroke='%232f6fed' stroke-width='2'/%3E%3C/svg%3E">
 <style>
   :root { --bg: #f6f7f9; --card: #fff; --ink: #14161b; --muted: #5d6470; --line: #e3e6ea; --accent: #2f6fed; --ok: #16a34a; --warn: #b45309; --bad: #dc2626; --code: #0f1115; --code-ink: #e8eaf0; }
@@ -47,6 +47,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 14px; display: block; overflow-x: auto; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
   td.wrapok { white-space: normal; }
+  code.wrapok { overflow-wrap: anywhere; }
   th { color: var(--muted); font-weight: 500; }
   tr.click { cursor: pointer; } tr.click:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
   tr.sel td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
@@ -160,8 +161,8 @@ const ticket = () =&gt; fetch('/ticket', { method: 'POST', headers: { 'Content-T
 const net = await join('match-7', { ticket });</code></pre>
   <p class="note">Keep the key on your server. <code>sub</code> is your own id for the player: the same person reconnecting keeps their place, and the project's Rooms tab can put them out by it.</p>
 
-  <h3 id="unity">Unity WebGL</h3>
-  <p>Download the preview package (<a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>) and install it with Package Manager &gt; + &gt; <b>Add package from tarball</b>; the Asset Store listing is <span class="soon">coming soon</span>. The same lobby in C#:</p>
+  <h3 id="unity">Unity</h3>
+  <p>Package Manager &gt; + &gt; <b>Add package from git URL</b>: <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.0</code> (or the tarball, <a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>, with <b>Add package from tarball</b>). Source and docs: <a href="https://github.com/jgriffith3433/hawkesnet-unity">github.com/jgriffith3433/hawkesnet-unity</a> (MIT); the Asset Store listing is in review. The same lobby in C#:</p>
 <pre><code>var lobby = new HawkesNetLobby(new HawkesNetOptions { project = "your-project", name = "Ada" }, "mygame.com");
 lobby.PeerJoined += (id, name) =&gt; Spawn(id, name);
 lobby.PoseChanged += (id, pose) =&gt; Move(id, pose.position, pose.yaw);
@@ -169,10 +170,15 @@ lobby.Message += (kind, data, from) =&gt; { if (kind == "chat") Show(from, data)
 lobby.Join("level-1");
 
 void Update() { lobby.Room?.Pose(player.position, player.eulerAngles.y); }</code></pre>
-  <p class="note">Or drop <code>HawkesNetAvatars</code> on a GameObject with a prefab per player (Package Manager &gt; Hawkes Net &gt; Samples &gt; Avatars). With a server: <code>ticketUrl</code> instead of <code>project</code>. WebGL builds only: the SDK runs in the page.</p>
+  <p class="note">Or drop <code>HawkesNetAvatars</code> on a GameObject with a prefab per player (Package Manager &gt; Hawkes Net &gt; Samples &gt; Avatars). With a server: <code>ticketUrl</code> instead of <code>project</code>. WebGL builds run the web SDK in the page; the Editor and desktop builds join the same rooms with the package's managed client (in the Editor, your project's test rooms with no key: press Play).</p>
 
   <h3 id="babylon">Babylon.js</h3>
-  <p>A Babylon module of its own (meshes for players, interpolation tied to the scene's clock) is <span class="soon">coming soon</span>. Today the web SDK above works with Babylon as it is: move a mesh in <code>onPose</code>, send yours each frame in <code>scene.onBeforeRenderObservable</code>.</p>
+  <p><a href="https://github.com/jgriffith3433/hawkesnet-babylon">Hawkes Net for Babylon.js</a> (MIT): everyone else as avatars played back smoothly on the room's clock, shared moving things, players in the background shown as away.</p>
+<pre><code>import * as BABYLON from '@babylonjs/core';
+import { multiplayer } from '@hawkesgen/net-babylon';
+
+const mp = multiplayer(scene, { babylon: BABYLON, project: 'your-project', name: 'Ada', player: playerMesh, liveHosts: ['mygame.com'] });
+mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</code></pre>
 
   <h2 id="messages">Messages and avatars</h2>
   <table>
@@ -300,7 +306,7 @@ void Update() { lobby.Room?.Pose(player.position, player.eulerAngles.y); }</code
             <p class="${good ? 'good' : 'err'} ${message ? '' : 'hidden'}" id="lMsg" role="alert">${esc(message)}</p>
           </form>
         </div>
-        <p class="note" style="text-align:center;margin-top:16px">Hawkes Net is multiplayer for web, Babylon and Unity WebGL games. <a href="${PORTAL}/net">See how it works</a>.</p>
+        <p class="note" style="text-align:center;margin-top:16px">Hawkes Net is multiplayer for web, Babylon.js and Unity games. <a href="${PORTAL}/net">See how it works</a>.</p>
       </div>`;
     const say = (text, ok = false) => { const el = $('lMsg'); el.textContent = text; el.className = ok ? 'good' : 'err'; el.classList.toggle('hidden', !text); };
     const setMode = (m) => {
@@ -404,8 +410,8 @@ void Update() { lobby.Room?.Pose(player.position, player.eulerAngles.y); }</code
   function engines(id = 'your-project') {
     return `<div class="engines">
       <div class="card"><span class="pill on" style="align-self:flex-start">available</span><h3>Web</h3><p class="note">One ES module, any engine or none: three.js, PixiJS, Phaser, a canvas.</p><code>import { lobby } from 'https://net.hawkesgen.com/sdk/hawkes-net@1.mjs';</code><a href="#noserver">The quickstart</a></div>
-      <div class="card"><span class="pill" style="align-self:flex-start">preview</span><h3>Unity WebGL</h3><p class="note">The package with an Avatars sample; the Asset Store listing is <span class="soon">coming soon</span>.</p><a class="btn small" href="/sdk/com.hawkes.net.tgz" style="align-self:flex-start">Download the package</a><a href="#unity">How to install it</a></div>
-      <div class="card"><span class="pill" style="align-self:flex-start">coming soon</span><h3>Babylon.js</h3><p class="note">A module of its own is <span class="soon">coming soon</span>. The web SDK works with Babylon today.</p><a href="#babylon">Use it with Babylon now</a></div>
+      <div class="card"><span class="pill on" style="align-self:flex-start">available</span><h3>Unity</h3><p class="note">WebGL, the Editor and desktop builds, with an Avatars sample. Asset Store listing in review.</p><a class="btn small" href="https://github.com/jgriffith3433/hawkesnet-unity" style="align-self:flex-start">hawkesnet-unity</a><a href="#unity">How to install it</a></div>
+      <div class="card"><span class="pill on" style="align-self:flex-start">available</span><h3>Babylon.js</h3><p class="note">Avatars, shared moving things and away players for a Babylon scene.</p><a class="btn small" href="https://github.com/jgriffith3433/hawkesnet-babylon" style="align-self:flex-start">hawkesnet-babylon</a><a href="#babylon">How to use it</a></div>
     </div>`;
   }
 
@@ -437,7 +443,8 @@ void Update() { lobby.Room?.Pose(player.position, player.eulerAngles.y); }</code
       <h2>Downloads</h2>
       <div class="card"><ul style="margin:0">
         <li><a href="/sdk/hawkes-net@1.mjs">hawkes-net.mjs</a> and <a href="/sdk/hawkes-net-core.mjs">hawkes-net-core.mjs</a> (keep them side by side), <a href="/sdk/hawkes-net@1.d.ts">hawkes-net.d.ts</a></li>
-        <li><a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>: Unity WebGL (preview)</li></ul></div>`;
+        <li><a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a>: Unity (WebGL, Editor, desktop); source <a href="https://github.com/jgriffith3433/hawkesnet-unity">hawkesnet-unity</a></li>
+        <li><a href="https://github.com/jgriffith3433/hawkesnet-babylon">hawkesnet-babylon</a>: Babylon.js</li></ul></div>`;
     wireKey();
   }
 
@@ -588,8 +595,8 @@ const lob = lobby({ project: '${esc(d.id)}', liveHosts: ['${esc(host)}'], name: 
 lob.onPose((peer, s) =&gt; moveAvatar(peer, s.p, s.y));
 lob.join('lobby');
 // every frame: lob.pose([x, y, z], yaw);</code></pre>
-      <h3>Unity WebGL <span class="pill">preview</span></h3>
-      <p><a class="btn" href="/sdk/com.hawkes.net.tgz">Download com.hawkes.net.tgz</a> <span class="note">Package Manager &gt; + &gt; Add package from tarball · Asset Store <span class="soon">coming soon</span></span></p>
+      <h3>Unity</h3>
+      <p><span class="note">Package Manager &gt; + &gt; Add package from git URL:</span> <code class="wrapok">https://github.com/jgriffith3433/hawkesnet-unity.git?path=/Packages/com.hawkes.net#v0.5.0</code> <span class="note">· or <a href="/sdk/com.hawkes.net.tgz">the tarball</a> · Asset Store listing in review</span></p>
 <pre><code>var lobby = new HawkesNetLobby(new HawkesNetOptions { project = "${esc(d.id)}", name = playerName }, "${esc(host)}");
 lobby.Join("lobby");</code></pre>
       <h3>Your server (tickets with your key)</h3>
