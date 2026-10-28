@@ -62,7 +62,8 @@ namespace Hawkes
             this.handle = handle;
             this.room = room;
             o = options ?? new HawkesNetClientOptions();
-            if (string.IsNullOrEmpty(o.endpoint)) o.endpoint = "https://net.hawkesgen.ai";
+            // Scenes saved before 0.6.0 hold the old live address, now gone: it means the default.
+            if (string.IsNullOrEmpty(o.endpoint) || o.endpoint.TrimEnd('/') == "https://net.hawkesgen.com") o.endpoint = "https://net.hawkesgen.ai";
             if (string.IsNullOrEmpty(o.sub)) o.sub = Guid.NewGuid().ToString("N").Substring(0, 24);
         }
 

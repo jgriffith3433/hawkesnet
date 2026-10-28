@@ -320,7 +320,7 @@ namespace Hawkes
                 var c = new HawkesNetClient(r.handle, room, new HawkesNetClientOptions
                 {
                     project = options.project, name = options.name, role = options.role, ticketUrl = options.ticketUrl, key = options.key,
-                    endpoint = string.IsNullOrEmpty(options.endpoint) ? "https://net.hawkesgen.ai" : options.endpoint,
+                    endpoint = string.IsNullOrEmpty(options.endpoint) || options.endpoint.TrimEnd('/') == "https://net.hawkesgen.com" ? "https://net.hawkesgen.ai" : options.endpoint,
                     configJson = options.configJson, ticketCredentials = options.ticketCredentials, sub = DeviceSub(),
                 });
                 managed[r.handle] = c;
@@ -377,7 +377,7 @@ namespace Hawkes
         static readonly System.Collections.Concurrent.ConcurrentQueue<string> managedCounts = new System.Collections.Concurrent.ConcurrentQueue<string>();
         static void CountManaged(int id, string endpoint, string project, IList<string> roomNames)
         {
-            var url = (string.IsNullOrEmpty(endpoint) ? "https://net.hawkesgen.ai" : endpoint.TrimEnd('/')) + "/v1/net/counts?project=" + Uri.EscapeDataString(project ?? "") + "&rooms=" + Uri.EscapeDataString(string.Join(",", roomNames ?? new string[0]));
+            var url = (string.IsNullOrEmpty(endpoint) || endpoint.TrimEnd('/') == "https://net.hawkesgen.com" ? "https://net.hawkesgen.ai" : endpoint.TrimEnd('/')) + "/v1/net/counts?project=" + Uri.EscapeDataString(project ?? "") + "&rooms=" + Uri.EscapeDataString(string.Join(",", roomNames ?? new string[0]));
             System.Threading.Tasks.Task.Run(async () =>
             {
                 try

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 (2026-10-28)
+
+- **Hawkes Net is at https://net.hawkesgen.ai** (hawkesgen.com is gone). The default endpoint, the SDK file and counts use it.
+  Scenes saved with the old address (https://net.hawkesgen.com, which Unity stored as the default) count as unset, so
+  they reach the new one without being opened again; a server of your own still wins.
+
 ## 0.5.1 (2026-10-27)
 
 - **Staging sites play on their own Hawkes Net.** In a WebGL build the page's `window.HAWKES_NET_ENDPOINT` (an origin)
