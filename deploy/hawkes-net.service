@@ -1,5 +1,5 @@
 [Unit]
-Description=Hawkes Net (net.hawkesgen.com): tickets, the room directory and the relay (src/hub.ts)
+Description=Hawkes Net (net.hawkesgen.ai): tickets, the room directory and the relay (src/hub.ts)
 After=network-online.target
 Wants=network-online.target
 

@@ -9,7 +9,7 @@
 	}
 }
 
-net.hawkesgen.com {
+net.hawkesgen.ai {
 	encode {
 		match {
 			header Content-Type text/*

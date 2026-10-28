@@ -94,7 +94,7 @@ async function main() {
 }
 
 /**
- * --url https://net.hawkesgen.com: a real Hawkes Net service. Tickets come from it (POST /v1/net/ticket with this PC's
+ * --url https://net.hawkesgen.ai: a real Hawkes Net service. Tickets come from it (POST /v1/net/ticket with this PC's
  * Gen key from ~/.hawkes/client.json, never printed; rooms "t-load-<n>" of --project, default netdemo: test rooms are
  * free and not counted), players connect where each ticket says, and the node's numbers come from its public status.
  * One address can hold only so many sockets (256 per relay process): keep --players under that times the workers.

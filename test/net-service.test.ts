@@ -32,11 +32,11 @@ test('the service is up with its own relay node, and hands out tickets for it', 
 
 test('the public door: a page on one of the project\'s sites gets a player ticket; other sites do not', async () => {
   const ask = (origin: string, body: any = {}) => fetch(`${endpoint}/v1/net/ticket`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ project: 'netdemo', room: 'door', sub: 's', client: { protocols: [3] }, ...body }) });
-  assert.equal((await ask('https://hawkesgen.com')).status, 200);
+  assert.equal((await ask('https://hawkesgen.ai')).status, 200);
   assert.equal((await ask('http://localhost:5173')).status, 200);
   assert.equal((await ask('https://evil.example')).status, 403);
-  assert.equal((await ask('https://hawkesgen.com', { role: 'bot' })).status, 403, 'bots need a key');
-  assert.equal((await ask('https://hawkesgen.com', { project: 'doseofdestruction', room: 'x' })).status, 403, 'only the project\'s own sites');
+  assert.equal((await ask('https://hawkesgen.ai', { role: 'bot' })).status, 403, 'bots need a key');
+  assert.equal((await ask('https://hawkesgen.ai', { project: 'doseofdestruction', room: 'x' })).status, 403, 'only the project\'s own sites');
 });
 
 test('a relay room: messages once and in order, avatars, things only from their simulator, ownership, states, actions', async () => {
@@ -224,7 +224,7 @@ test("publish can put people out of a room: everyone, or those who joined as one
 });
 
 test("the portal's rooms have no keyless door, and localhost is a door only where NET_TRUST_LOCALHOST says so", async () => {
-  const r = await fetch(`${endpoint}/v1/net/ticket`, { method: 'POST', headers: { Origin: 'https://hawkesgen.com', 'Content-Type': 'application/json' }, body: JSON.stringify({ project: 'hawkesgenwebsite', room: 'g/g_x/edit', client: { protocols: [3] } }) });
+  const r = await fetch(`${endpoint}/v1/net/ticket`, { method: 'POST', headers: { Origin: 'https://hawkesgen.ai', 'Content-Type': 'application/json' }, body: JSON.stringify({ project: 'hawkesgenwebsite', room: 'g/g_x/edit', client: { protocols: [3] } }) });
   assert.equal(r.status, 403, 'an Origin header can be set by anyone: the portal asks with its key');
   const { originAllowed, netProject } = await import('../src/registry.ts');
   assert.equal(originAllowed(netProject('netdemo'), 'http://localhost:5173'), true, 'on a developer machine');

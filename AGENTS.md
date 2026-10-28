@@ -1,6 +1,6 @@
 # Hawkes Net — agent guide
 
-The multiplayer service for every Hawkes game and for outside developers (net.hawkesgen.com). `README.md` has the layout,
+The multiplayer service for every Hawkes game and for outside developers (net.hawkesgen.ai). `README.md` has the layout,
 `docs/net.md` the design and what is built (its first section wins over the rest). This repo was Hawkes Gen's `net/`
 folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone repository"); its history before that is in
 `jgriffith3433/hawkesgen`.
@@ -20,7 +20,7 @@ folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone rep
 - **The SDK is public** (`@hawkesgen/net`, MIT); this repo is private. Never put a secret, a project's key or anything
   about the box in `sdk/`.
 - **Consumers:** games keep a copy of `sdk/js` or install `@hawkesgen/net`; Unity games install `com.hawkes.net` from **hawkesnet-unity** (public, its home; `sdk/unity/` here is a copy for the download at `/sdk/com.hawkes.net.tgz` and the bridge's test: copy it again after a release there)
-  (`Packages/com.hawkes.net`) and load the SDK from `https://net.hawkesgen.com/sdk/hawkes-net@1.mjs`. After an SDK change,
+  (`Packages/com.hawkes.net`) and load the SDK from `https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs`. After an SDK change,
   tell the products that keep a copy (Dose Of Destruction `src/game/net/hawkes/`, the portal `public/play/`, Yooba Land
   and Sick Of It's `Packages/com.hawkes.net`).
 - Secrets live on the box in `/etc/hawkes/net.env` (a Gen key for the project `hawkesnet`); never commit, print or log them.

@@ -1,4 +1,4 @@
-// Which projects use Hawkes Net and how (docs/net.md "Projects and accounts"). A project is owned by a hawkesgen.com
+// Which projects use Hawkes Net and how (docs/net.md "Projects and accounts"). A project is owned by a hawkesgen.ai
 // account (its Gen project, usr_...) and kept by the service (net_projects: name, sites, peer to peer on or off, room
 // size, the account's tier), made and changed through the portal. Hawkes's own games also have an entry in
 // projects.json (re-read when it changes: the room shapes, interest tiers and limits their code depends on), under

@@ -235,7 +235,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const env = (k: string, d = '') => process.env[k] ?? d;
   const port = Number(env('NET_PORT', '8443'));
   const id = env('NET_NODE_ID', `n-${os.hostname()}`);
-  const genUrl = env('NET_GEN_URL', 'https://gen.hawkesgen.com');
+  const genUrl = env('NET_GEN_URL', 'https://gen.hawkesgen.ai');
   const key = env('NET_GEN_KEY');
   if (!key) { console.error('NET_GEN_KEY is required (a Gen API key with the project "hawkesnet")'); process.exit(1); }
   const node = new NetNode({

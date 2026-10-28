@@ -128,7 +128,7 @@ const ROOM_RE = /^[a-z0-9][a-z0-9/_.-]{0,63}$/i;
 /** May this key make tickets for this Hawkes Net project? Its own project, or a key-project pattern the entry lists. */
 export function keyMayIssue(c: Client, p: NetProject) {
   if (c.role === 'owner' || c.projects.includes('*') || canProject(c, p.id)) return true;
-  // The account that owns it: the portal's key narrowed to that account (a customer's server asking through hawkesgen.com).
+  // The account that owns it: the portal's key narrowed to that account (a customer's server asking through hawkesgen.ai).
   if (p.owner && c.projects.includes(p.owner)) return true;
   // A key whose own projects entry is the pattern (the portal's key: usr_*) may; the same key narrowed to one customer
   // (X-Hawkesgen-Project: usr_x) may not act for the whole project.
@@ -165,9 +165,9 @@ function makeTicket(body: any, auth: TicketAuth) {
   const project = String(body?.project ?? '');
   if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(project)) throw new NetError('project is the Hawkes Net project id');
   const p = netProject(project);
-  // No anonymous projects: one made on net.hawkesgen.com (or one of Hawkes's games). An owner key (tests, bots) may.
+  // No anonymous projects: one made on net.hawkesgen.ai (or one of Hawkes's games). An owner key (tests, bots) may.
   const root = auth.client && (auth.client.role === 'owner' || auth.client.projects.includes('*'));
-  if (!p.listed && !root) throw new NetError(`No Hawkes Net project "${project}": make one on net.hawkesgen.com`, { status: 404 });
+  if (!p.listed && !root) throw new NetError(`No Hawkes Net project "${project}": make one on net.hawkesgen.ai`, { status: 404 });
   const room = String(body?.room ?? '');
   if (!ROOM_RE.test(room)) throw new NetError('room is 1 to 64 of letters, digits and / _ . -');
   let role = ['player', 'spectator', 'bot', 'test'].includes(body?.role) ? body.role : 'player';
@@ -234,7 +234,7 @@ function makeTicket(body: any, auth: TicketAuth) {
   const url = node!.embedded ? embeddedUrl(auth) : node!.url;
   return { ticket, peer, ord, config: cfg, relayUrl: url, signalUrl: url, transports: tr, ice: ICE, expiresAt: (iat + 90) * 1000, node: node!.id, epoch: row.epoch, protocol: protocols.includes(3) ? 3 : 2, sdk: NET_VERSION };
 }
-/** This process's own relay node is reached at NET_PUBLIC_URL (the box: wss://net.hawkesgen.com/v1/net/ws), else where
+/** This process's own relay node is reached at NET_PUBLIC_URL (the box: wss://net.hawkesgen.ai/v1/net/ws), else where
  *  the caller reached this service. */
 function embeddedUrl(a: TicketAuth) {
   const fixed = env('NET_PUBLIC_URL');

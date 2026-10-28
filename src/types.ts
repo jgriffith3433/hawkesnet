@@ -253,7 +253,7 @@ export interface JoinOptions {
   transport?: TransportChoice;
   /** A ticket from the game's own server; otherwise the SDK asks Gen (POST /v1/net/ticket). Not needed when the project is serverless. */
   ticket?: Ticket | (() => Promise<TicketResponse>);
-  /** Where Gen is (default https://gen.hawkesgen.com). */
+  /** Where Gen is (default https://gen.hawkesgen.ai). */
   endpoint?: string;
   name?: string;
   /** A stable id for this player. Default: a random one kept in localStorage. */

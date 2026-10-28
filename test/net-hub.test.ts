@@ -99,7 +99,7 @@ test('keys are checked with Gen (and kept a minute): the portal narrowed to a cu
   assert.equal((await post('/v1/net/ticket', { project: 'aa-game', room: 'lobby', client: { protocols: [3] } }, { Authorization: 'Bearer hg_nope' })).status, 401);
   assert.equal((await post('/v1/net/ticket', { project: 'netdemo', room: 'x', client: { protocols: [3] } })).status, 401, 'no key, no origin: nothing (no local owner on a box)');
   assert.equal((await post('/v1/net/ticket', { project: 'netdemo', room: 'x', client: { protocols: [3] } }, { Origin: 'http://localhost:5173' })).status, 403, 'localhost is no door on a box');
-  assert.equal((await post('/v1/net/ticket', { project: 'netdemo', room: 'x', client: { protocols: [3] } }, { Origin: 'https://net.hawkesgen.com' })).status, 200, 'the demo page on the box');
+  assert.equal((await post('/v1/net/ticket', { project: 'netdemo', room: 'x', client: { protocols: [3] } }, { Origin: 'https://net.hawkesgen.ai' })).status, 200, 'the demo page on the box');
 });
 
 test('players play on the service, and their usage goes to Gen with the service\'s key', async () => {

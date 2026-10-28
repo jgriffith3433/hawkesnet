@@ -66,8 +66,8 @@ if (ssh('sudo test -s /etc/hawkes/net.env && echo yes || echo no') !== 'yes') {
   const envText = [
     '# Hawkes Net box settings (hawkesnet deploy/setup.mjs). The key is a Gen key for the project "hawkesnet".',
     'NET_PORT=8800', 'NET_HOST=127.0.0.1', 'NET_DATA_DIR=/srv/hawkes/net-data',
-    'NET_GEN_URL=https://gen.hawkesgen.com', `NET_GEN_KEY=${made.key}`,
-    'NET_PUBLIC_URL=wss://net.hawkesgen.com/v1/net/ws', `NET_WORKERS=${vcpu}`, `NET_CAPACITY=${vcpu * 2000}`, `NET_NODE_ID=net-1`,
+    'NET_GEN_URL=https://gen.hawkesgen.ai', `NET_GEN_KEY=${made.key}`,
+    'NET_PUBLIC_URL=wss://net.hawkesgen.ai/v1/net/ws', `NET_WORKERS=${vcpu}`, `NET_CAPACITY=${vcpu * 2000}`, `NET_NODE_ID=net-1`,
     'NODE_ENV=production', '',
   ].join('\n');
   ssh('sudo install -m 640 -o root -g hawkes /dev/stdin /etc/hawkes/net.env', envText);
@@ -84,4 +84,4 @@ console.log(ssh('for i in $(seq 1 20); do curl -s -m 3 http://127.0.0.1:8800/hea
 step('Caddy');
 put(path.join(HERE, 'Caddyfile'), '/tmp/Caddyfile.net', 644);
 ssh('sudo install -d -o caddy -g caddy /var/log/caddy && sudo -u caddy caddy validate --config /tmp/Caddyfile.net --adapter caddyfile >/dev/null 2>&1 && sudo install -m 644 /tmp/Caddyfile.net /etc/caddy/Caddyfile && sudo rm /tmp/Caddyfile.net && sudo systemctl daemon-reload && sudo systemctl reload-or-restart caddy && systemctl is-active caddy');
-step('done: https://net.hawkesgen.com/healthz');
+step('done: https://net.hawkesgen.ai/healthz');

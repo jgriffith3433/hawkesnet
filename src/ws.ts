@@ -1,6 +1,6 @@
 // A WebSocket server (RFC 6455) with no dependencies, for Hawkes Net's relay nodes: text and binary frames,
 // fragmented messages, ping/pong, close, a size limit, a subprotocol, slow-client detection, and one heartbeat sweep for
-// every socket of the process (not a timer each: a node holds thousands). Adapted from hawkesgen.com's src/ws.ts.
+// every socket of the process (not a timer each: a node holds thousands). Adapted from hawkesgen.ai's src/ws.ts.
 //
 // The handshake takes plain headers rather than an IncomingMessage, so a relay node's primary process can read the
 // upgrade request and hand the raw socket to the worker that owns the room (child_process sendHandle).

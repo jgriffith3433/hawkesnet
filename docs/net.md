@@ -9,16 +9,16 @@ section says so and wins. Exact shapes: `src/types.ts` (the design's types) and 
 |---|---|---|
 | Room core + protocol v3 | `sdk/js/hawkes-net-core.mjs` | The room (from the portal's `relay.ts`, same rules), the binary codec (varints, quantized values, deltas, per-stream dictionaries), protocol 2 (JSON) kept, `Track`, snapshot/seed for moving a room. One file: runs in relay nodes and in a p2p host's page. Hot paths use integer slots and keys, not string maps. |
 | Relay node | `src/node.ts` (+ `rooms.ts`, `worker.ts`, `ws.ts`, `tickets.ts`, `lag.ts`) | WebSocket server (binary, subprotocol `hawkes-net.v3`), tickets checked offline (Ed25519), rooms pinned to worker processes by a hash of the room key (the primary hands the socket over: `child_process` sendHandle), p2p signal mode, the move to relay on the same sockets, resume tokens (15 s grace), the service's publish, usage, heartbeat, drain. Runs inside the service (`src/hub.ts`) or standalone on another box (`node src/node.ts`). |
-| **The Hawkes Net box** | `src/hub.ts`, `deploy/` (setup, units, Caddy, self-deploy), `hawkesstudio/deploy/provision-net.mjs` | **Where it runs (J, 2026-10-25: off the control server).** `https://net.hawkesgen.com`: one EC2 instance (c7g.large, Graviton, us-east-1, ~$59/month with disk and IPv4, plus $0.09/GB the relay sends) running everything multiplayer in one service: tickets (the public door and keyed), the directory and signing keys in its own data folder (`/srv/hawkes/net-data`), publish, room info, heartbeats, status, the SDK files at `/sdk/hawkes-net@1.mjs`, and the relay with one worker process per vCPU. Gen does two things for it: checks API keys (`GET /v1/net/whoami`, the box keeps an answer a minute) and takes usage once a minute (`POST /v1/net/usage` with the box's `hawkesnet` key). Caddy in front holds the certificate; no CloudFront. The box deploys itself from main (`deploy/pull.mjs`: Hawkes Net's tests (`net/test`, no packages) on a clean copy, restart with drain, health check, back on failure). More relay boxes: run `node src/node.ts` with `NET_GEN_URL=https://net.hawkesgen.com` and a `hawkesnet` key; the directory prefers them for new rooms. Bigger box: `NET_TYPE` in provision-net.mjs (a stop and start). |
+| **The Hawkes Net box** | `src/hub.ts`, `deploy/` (setup, units, Caddy, self-deploy), `hawkesstudio/deploy/provision-net.mjs` | **Where it runs (J, 2026-10-25: off the control server).** `https://net.hawkesgen.ai`: one EC2 instance (c7g.large, Graviton, us-east-1, ~$59/month with disk and IPv4, plus $0.09/GB the relay sends) running everything multiplayer in one service: tickets (the public door and keyed), the directory and signing keys in its own data folder (`/srv/hawkes/net-data`), publish, room info, heartbeats, status, the SDK files at `/sdk/hawkes-net@1.mjs`, and the relay with one worker process per vCPU. Gen does two things for it: checks API keys (`GET /v1/net/whoami`, the box keeps an answer a minute) and takes usage once a minute (`POST /v1/net/usage` with the box's `hawkesnet` key). Caddy in front holds the certificate; no CloudFront. The box deploys itself from main (`deploy/pull.mjs`: Hawkes Net's tests (`net/test`, no packages) on a clean copy, restart with drain, health check, back on failure). More relay boxes: run `node src/node.ts` with `NET_GEN_URL=https://net.hawkesgen.ai` and a `hawkesnet` key; the directory prefers them for new rooms. Bigger box: `NET_TYPE` in provision-net.mjs (a stop and start). |
 | Gen's part | Gen's `src/netbridge.ts` (the hawkesgen repo) | Three things: `GET /v1/net/whoami` (who an API key is, narrowed by `X-Hawkesgen-Project`: the box checks keys with it), `POST /v1/net/usage` (the box's usage into Gen's usage table, provider `hawkesnet`, relay GB at $0.09, peer to peer and test rooms free), and a 308 to the box for everything else under `/v1/net/` and the SDK files. Gen runs no relay and takes no WebSocket upgrades. |
 | The service | `src/service.ts`, `api.ts`, `registry.ts`, `store.ts`, `projects.json` | Tickets (`POST /v1/net/ticket`: a Gen key, or the public door by origin), the directory (`net_nodes`, `net_rooms` in the service's own `net.db`), node heartbeats, room events, usage handed to Gen, publish to a room or every room under `prefix/*` (and kicks), room info, status, the SDK files at `/sdk/hawkes-net@1.mjs`. Settings are `NET_*` environment variables (`store.ts`). |
-| Client SDK | `sdk/js/hawkes-net.mjs` (types: `hawkes-net.d.ts`, served at `/sdk/hawkes-net@1.d.ts`) | `lobby({ project, liveHosts, ... })`: the standard layer for web and Babylon games (below), the same as Unity's `HawkesNetLobby`. `join(room, { project, transport, ticket, ... })`: relay (WebSocket), p2p (WebRTC host-star: the host runs the core in its page; players start on the signal route and move onto their link; one stream, one carrier), `auto` (p2p, then the relay without the game noticing), reconnect with resume, exactly-once reliable messages across reconnects and moves, the shared clock (eased, never jumps), `send/on`, `pose/onPose`, `sync.*` (the portal's H.sync: state, action, track, push, onThing, thing, claim, hold, release, mine, holder, clear, onHost), `raw` (an engine with its own logic: hawkesgen.com's `play/net.js`), stats, sleep handling, `pagehide` leave. |
+| Client SDK | `sdk/js/hawkes-net.mjs` (types: `hawkes-net.d.ts`, served at `/sdk/hawkes-net@1.d.ts`) | `lobby({ project, liveHosts, ... })`: the standard layer for web and Babylon games (below), the same as Unity's `HawkesNetLobby`. `join(room, { project, transport, ticket, ... })`: relay (WebSocket), p2p (WebRTC host-star: the host runs the core in its page; players start on the signal route and move onto their link; one stream, one carrier), `auto` (p2p, then the relay without the game noticing), reconnect with resume, exactly-once reliable messages across reconnects and moves, the shared clock (eased, never jumps), `send/on`, `pose/onPose`, `sync.*` (the portal's H.sync: state, action, track, push, onThing, thing, claim, hold, release, mine, holder, clear, onHost), `raw` (an engine with its own logic: hawkesgen.ai's `play/net.js`), stats, sleep handling, `pagehide` leave. |
 | Unity WebGL | `sdk/unity/com.hawkes.net` (0.4.0) | The standard Unity layer (below, "Unity: the standard layer"): `HawkesNetLobby` (shared rooms by area, live/beta/playtest names, shards, rejoining, one status), `HawkesNetAvatars` (drop-in avatars), and the room itself, `HawkesNet.Join(room, options)`: `OnReady`, `On(kind, (data, from))` / `On<T>`, `Send` (JSON) and `SendText` (the game's own text, arriving as sent), `Pose(position, yawDegrees, extra)` and `OnPose`/`Poses` (changed poses read once a frame, with their extra values and time), `Peers`, `PeerOrder`, `Order`, `Host`, `Transport`, `OnStatus`, `OnProblem`, `Migrate`, `Leave`, and `HawkesNet.Count(project, rooms, done)` (public counts). The web SDK runs in the page (`HawkesNet.jslib` imports it from `/sdk/hawkes-net@1.mjs`); in the Editor `Join` reports `webgl-only`. Test `test/net-unity.test.ts` runs the jslib against the real SDK and service. Adopted by Sick Of It (its ghosts, on `HawkesNetLobby`) and Yooba Land (its whole MMO). 0.2.1 adds the Avatars sample, a changelog and the outside developer's readme (Asset Store shape); 0.4.0 the background: `Away`, `OnPeerAway`, `HostReason`, `SetAway`, `HawkesNet.RunInBackground`. |
-| **Projects and accounts** | `src/projects.ts` (`net_projects`, `net_tickets`, `net_days`, `net_online`), `registry.ts` (`useProjectRows`), `GET/POST/DELETE /v1/net/projects[/<id>[/claim|/rooms/<room>[/kick]]]`; the portal's `/v1/net/projects` (hawkesgenwebsite `src/hnet.ts`); the dashboard `public/dashboard.html` | Every project belongs to a hawkesgen.com account (below, "Projects and accounts"). Nothing is anonymous: no project, no ticket. Each project's page: players online now and over the day, rooms and who is in them (put a player out), the ticket log (made and refused, and why), 30 days of usage. The Unity package downloads from `/sdk/com.hawkes.net.tgz` (`src/tarball.ts`). |
+| **Projects and accounts** | `src/projects.ts` (`net_projects`, `net_tickets`, `net_days`, `net_online`), `registry.ts` (`useProjectRows`), `GET/POST/DELETE /v1/net/projects[/<id>[/claim|/rooms/<room>[/kick]]]`; the portal's `/v1/net/projects` (hawkesgenwebsite `src/hnet.ts`); the dashboard `public/dashboard.html` | Every project belongs to a hawkesgen.ai account (below, "Projects and accounts"). Nothing is anonymous: no project, no ticket. Each project's page: players online now and over the day, rooms and who is in them (put a player out), the ticket log (made and refused, and why), 30 days of usage. The Unity package downloads from `/sdk/com.hawkes.net.tgz` (`src/tarball.ts`). |
 | **Express frames** | `FRAME.express` in `hawkes-net-core.mjs`; `room.express(bytes, { to })`, `room.onExpress(fn)` in the SDK (and on `lobby()`) | For what can't wait (a fighting game's inputs): binary, unreliable, sent at once and forwarded at once, past the 33 ms bundling on both ends. On a p2p link, a second data channel (`hx`, unordered, no retransmits). Below, "Express". |
 | **In the background** | `hawkes-net.mjs` (the background clock, `background()`, `inBackground()`), `setAway` and host choice in `hawkes-net-core.mjs`; Unity `HawkesNet.RunInBackground`, `Peer.Away` | A page in the background keeps its room at full speed, games can keep their step running there, and an away host hands the room to a present player. Below, "In the background". |
 | **Records** | `src/records.ts`, `GET/POST /v1/net/records` | A small store of signed events per project (a leaderboard's results): the newest per publisher and key kept, read by anyone. Below, "Records". |
-| Demo page | `public/demo.html` (`https://net.hawkesgen.com/demo`; the root `/` is the developer dashboard, `public/dashboard.html`: docs, and with a hawkesgen.com sign-in your key, rooms and usage, read from the portal, which allows that origin on `/v1/net/me` and `/v1/users/api-key`) | Dots in a room: invite link, bots in the same page, "move to the relay", live transport, host, routes, round trip and bandwidth. |
+| Demo page | `public/demo.html` (`https://net.hawkesgen.ai/demo`; the root `/` is the developer dashboard, `public/dashboard.html`: docs, and with a hawkesgen.ai sign-in your key, rooms and usage, read from the portal, which allows that origin on `/v1/net/me` and `/v1/users/api-key`) | Dots in a room: invite link, bots in the same page, "move to the relay", live transport, host, routes, round trip and bandwidth. |
 | Tools | `tools/net-load.mjs`, `tools/net-dev.mjs` | The load test (below; `--url` tests a real service from outside) and the service on this PC with a scratch data folder. |
 | Tests | `test/` (`npm test`): `net-core`, `net-node`, `net-service`, `net-hub`, `net-unity`; Gen's bridge is tested in Gen (`test/netbridge.test.ts`) | Rules from the portal's relay on both protocols, codec bounds, the measured scene's bytes, flush time, a relay room over real sockets (and with worker processes), refused tickets, resume, p2p signalling and the move to the relay with nothing reliable lost, publish, full rooms, raw mode, usage rows. |
 
@@ -73,7 +73,7 @@ section says so and wins. Exact shapes: `src/types.ts` (the design's types) and 
 ### Using it
 
 ```js
-import { join } from 'https://net.hawkesgen.com/sdk/hawkes-net@1.mjs'; // or npm install @hawkesgen/net
+import { join } from 'https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs'; // or npm install @hawkesgen/net
 const net = await join('lobby-1', { project: 'mygame', name: 'Ada' });   // public door: the page's origin must be the project's
 net.on('chat', (text, from) => console.log(from.name, text));
 net.send('chat', 'hi');                       // reliable: once, in order, also across reconnects and the move to the relay
@@ -87,8 +87,8 @@ const t = net.sync.track({ pos: [0, 1, 2] }); // smooth playback of others' snap
   returns Gen's answer, called again on reconnects).
 - **Server sends.** `POST /v1/net/publish { project, room | 'prefix/*', ops | event, by, except }` with a Gen key.
 - **An engine with its own multiplayer logic** passes `onRaw` and sends with `net.raw.send(m)` in the core's message
-  shapes (hawkesgen.com's `public/play/net.js` does).
-- **Status.** `GET /v1/net/status` (nodes, rooms per project and transport), `GET /v1/net/nodes`, the demo at `https://net.hawkesgen.com/demo`.
+  shapes (hawkesgen.ai's `public/play/net.js` does).
+- **Status.** `GET /v1/net/status` (nodes, rooms per project and transport), `GET /v1/net/nodes`, the demo at `https://net.hawkesgen.ai/demo`.
 - **Public counts.** `GET /v1/net/counts?project=<id>&rooms=a,b` (no key, CORS open): `{ project, rooms: { a: 12, b: 0 } }`,
   players in each named room, for a project with its own sites (`origins`): a page showing "12 in Level 1" before joining it.
   Up to 24 rooms a call, 120 calls a minute per address. Numbers only.
@@ -188,17 +188,17 @@ Package `sdk/unity/com.hawkes.net` (its README has the code):
 
 ### Projects and accounts (J, 2026-10-26)
 
-J: "You create the account at hawkesgen.com and you get access to the Hawkes Net portal too and you can create your own
-projects and get an api key, download the sdk and plug it into your unity project or babylon project. hawkesgen.com game is
+J: "You create the account at hawkesgen.ai and you get access to the Hawkes Net portal too and you can create your own
+projects and get an api key, download the sdk and plug it into your unity project or babylon project. hawkesgen.ai game is
 just the 1st project under my account." And: "make it so peer to peer isn't defaulted and API key and account at hawkesgen
 is required."
 
-- **net.hawkesgen.com is the product** (J, 2026-10-26: hawkesgen.com/net advertises it, `/net/docs` is gone): signed out it is a
+- **net.hawkesgen.ai is the product** (J, 2026-10-26: hawkesgen.ai/net advertises it, `/net/docs` is gone): signed out it is a
   sign-in page (Google with `next=/net/back`, or email and password posted to the portal's own login, signup and forgot routes,
   which allow this origin), and every way in comes back to it; signed in: Projects (a getting-started guide and the engines
   when there are none), Docs, Account (the API key, downloads), and a page per project.
-- **Accounts are hawkesgen.com's.** net.hawkesgen.com (the dashboard) reads and changes everything through the portal with
-  the hawkesgen.com session; the portal asks the service with its key and names the account (`owner`: its Gen project,
+- **Accounts are hawkesgen.ai's.** net.hawkesgen.ai (the dashboard) reads and changes everything through the portal with
+  the hawkesgen.ai session; the portal asks the service with its key and names the account (`owner`: its Gen project,
   `usr_...`), whether it is an admin and its tier (`paid` or `free`). The service trusts a key for a pattern of accounts
   (the portal's `usr_*`) to name one of them, a key for one account to act for that account, and owner/admin Gen keys for
   anyone (`projects.ts actor`).
@@ -213,7 +213,7 @@ is required."
   (`FREE_LIMITS`). A paid account (credits or a plan) gets its sites, server tickets and the defaults (64 a room, 200 rooms,
   2,000 players). Hawkes's games keep their file limits. The portal tells the service the tier on every call.
 - **Tickets:** a page on a project's sites (no key), localhost for a project's test rooms (`t-...`), or a key that may act
-  for the project (the account's servers through `POST https://hawkesgen.com/v1/net/rooms/ticket` with `project`; the portal
+  for the project (the account's servers through `POST https://hawkesgen.ai/v1/net/rooms/ticket` with `project`; the portal
   narrows its key to the account and the service checks the project is the account's). Every ticket, made or refused, is in
   the project's log for 7 days and counted in its day.
 - **The relay by default.** Projects allow only the relay unless the account turns peer to peer on; the SDK (`join`,
@@ -270,7 +270,7 @@ mode* working. The portal's JSON protocol (v2) must keep working for pages alrea
         ├─ transport relay ─ wss ── CloudFront ── relay node (Graviton, our process)
         └─ 'auto': p2p while small and healthy, then the relay, same room, same peer ids
 
- Hawkes Gen (gen.hawkesgen.com)                      Relay nodes (n1, n2, ...)
+ Hawkes Gen (gen.hawkesgen.ai)                      Relay nodes (n1, n2, ...)
    POST /v1/net/ticket  (signs tickets)                 hold rooms (a room lives on ONE node)
    directory: which node holds which room               verify tickets offline (public key only)
    per-project limits, usage -> /v1/usage               report usage and room events to Gen
@@ -625,7 +625,7 @@ Settings, the dashboard's Usage tab):
   database. Node `n1` first; more are added by launching the same image (like the fleet image: `hawkesgen net node launch`, later).
   Planning capacity **600 players per `c7g.large` on the medium profile** (one core ≈ 300 players at 30 bundles/s each with
   interest filtering: an assumption from the portal's design, to be replaced by a load test before launch; the first relay task measures it).
-- **In front: CloudFront with WebSockets** (the viewer connection is `wss://net.hawkesgen.com/n1/v3?...`; a behavior per node path `/n1/*`
+- **In front: CloudFront with WebSockets** (the viewer connection is `wss://net.hawkesgen.ai/n1/v3?...`; a behavior per node path `/n1/*`
   to that node's origin; the distribution allows 25 behaviors by default, enough for ~20 nodes, then a second
   distribution). Reasons: TLS and DDoS absorption without a load balancer, the browser sees one hostname, and **AWS
   origin to CloudFront transfer is free**, so the box's own egress bill (EC2 internet transfer is ~$0.09/GB) disappears:

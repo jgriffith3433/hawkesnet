@@ -1,5 +1,5 @@
-// Projects and accounts (docs/net.md "Projects and accounts"): every Hawkes Net project belongs to a hawkesgen.com
-// account (its Gen project, usr_...). The account makes its projects on net.hawkesgen.com (through the portal, which
+// Projects and accounts (docs/net.md "Projects and accounts"): every Hawkes Net project belongs to a hawkesgen.ai
+// account (its Gen project, usr_...). The account makes its projects on net.hawkesgen.ai (through the portal, which
 // checks who is signed in and passes the account here with its key), sets each one's sites, peer to peer and room size,
 // and reads its numbers: players online now and over the last day, rooms, the ticket log (made and refused, and why) and
 // daily usage. Hawkes's own games (projects.json) are projects too, taken by an admin's account.
