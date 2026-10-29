@@ -1,8 +1,14 @@
 // Sets up (or repairs) the Hawkes Net box over SSH, from J's PC. Idempotent; secrets travel on stdin, never in arguments.
-// The box itself is made by hawkesstudio/deploy/provision-net.mjs (state in hawkesstudio/deploy/.keys/net.json).
+// The box itself: live is the Google Cloud VM hawkes-net (hawkes-prod, us-east4-c; made by hand on 2026-10-28 after AWS,
+// first boot deploy/cloud-init.sh; state hawkesstudio/deploy/.keys/net.json or --host/--key), beta is made by
+// deploy/provision-gce.mjs (state net-beta.json). Before that, hawkesstudio/deploy/provision-net.mjs made the AWS box.
 //
-//   node deploy/setup.mjs                 the box from that state file, Gen's key for it made if missing
+//   node deploy/setup.mjs                 the live box (net.hawkesgen.ai) from that state file, Gen's key for it made if missing
 //   node deploy/setup.mjs --host <ip> --key <ssh key>
+//   node deploy/setup.mjs --lane beta     the beta box (hawkesnet.hawkesgen.ai; made by deploy/provision-gce.mjs, state
+//                                         hawkesstudio/deploy/.keys/net-beta.json): follows `beta`, its key made on
+//                                         gen-beta with genBetaKey, so it checks API keys with gen-beta, never live Gen
+// The lanes (address, branch, Gen) are deploy/lane.mjs.
 //
 // What it does: the GitHub token for pulls (from this PC's git credentials, as the other boxes have), the hawkesgen
 // checkout in /srv/hawkes/hawkesnet (Hawkes Net needs no npm packages), /etc/hawkes/net.env with a Gen key for the
@@ -13,17 +19,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { lane, envFor, caddyfileFor, envProblem } from './lane.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const arg = (k) => { const i = process.argv.indexOf(`--${k}`); return i >= 0 ? process.argv[i + 1] : undefined; };
-const stateFile = path.resolve(HERE, '..', '..', 'hawkesstudio', 'deploy', '.keys', 'net.json');
+const L = lane(arg('lane') ?? 'live');
+const stateFile = path.resolve(HERE, '..', '..', 'hawkesstudio', 'deploy', '.keys', L.stateFile);
 const st = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : {};
 const host = arg('host') ?? st.ip;
 const key = arg('key') ?? st.key;
-if (!host || !key) throw new Error('usage: node deploy/setup.mjs [--host <ip> --key <ssh key>] (or make the box with hawkesstudio/deploy/provision-net.mjs)');
+if (!host || !key) throw new Error(`usage: node deploy/setup.mjs [--lane live|beta] [--host <ip> --key <ssh key>] (no ${stateFile}: make the box first${L.name === 'beta' ? ' with deploy/provision-gce.mjs' : ''})`);
+if (st.lane && st.lane !== L.name) throw new Error(`${stateFile} is the ${st.lane} box, not ${L.name}`);
 const DIR = '/srv/hawkes/hawkesnet';
-const BRANCH = arg('branch') ?? 'main'; // a branch only to try a change before it is on main (the box then follows main)
-const step = (s) => console.log(`[net-setup] ${s}`);
+const BRANCH = arg('branch') ?? L.branch; // another branch only to try a change before it is on the lane's (the box then follows the lane)
+const step = (s) => console.log(`[net-setup ${L.name}] ${s}`);
 
 function ssh(command, input) {
   const r = spawnSync('ssh', ['-i', key, '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=15', `ubuntu@${host}`, command], { input, encoding: 'utf8', windowsHide: true });
@@ -56,22 +65,23 @@ console.log(ssh(`sudo install -d -o hawkes -g hawkes /srv/hawkes && if [ -d ${DI
 
 step('settings (/etc/hawkes/net.env)');
 if (ssh('sudo test -s /etc/hawkes/net.env && echo yes || echo no') !== 'yes') {
-  // A Gen key for the project "hawkesnet": the box sends usage with it. Made with this PC's Gen owner key.
+  // A Gen key for the project "hawkesnet" on the lane's Gen: the box checks players' keys and sends usage with it. Made
+  // with this PC's owner key for that Gen (client.json genKey for live, genBetaKey for beta).
   const c = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.hawkes', 'client.json'), 'utf8'));
-  const gen = String(c.genUrl).trim().replace(/\/+$/, '');
-  const r = await fetch(`${gen}/v1/clients`, { method: 'POST', headers: { Authorization: `Bearer ${String(c.genKey).trim()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `hawkes-net box (${st.instanceId ?? host})`, role: 'user', projects: ['hawkesnet'] }) });
+  const owner = String(c[L.ownerKey] ?? '').trim();
+  if (!owner) throw new Error(`~/.hawkes/client.json has no ${L.ownerKey}`);
+  const health = await fetch(`${L.gen}/v1/health`).then((r) => r.json()).catch(() => ({}));
+  if ((health.lane ?? 'live') !== L.name) throw new Error(`${L.gen} says it is the ${health.lane ?? 'live'} lane, not ${L.name}`);
+  const r = await fetch(`${L.gen}/v1/clients`, { method: 'POST', headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name: `${L.keyName} (${st.instanceId ?? st.instance ?? host})`, role: 'user', projects: ['hawkesnet'] }) });
   if (!r.ok) throw new Error(`Gen would not make the box's key: ${r.status} ${(await r.text()).slice(0, 200)}`);
   const made = await r.json();
   const vcpu = Number(ssh('nproc')) || 2;
-  const envText = [
-    '# Hawkes Net box settings (hawkesnet deploy/setup.mjs). The key is a Gen key for the project "hawkesnet".',
-    'NET_PORT=8800', 'NET_HOST=127.0.0.1', 'NET_DATA_DIR=/srv/hawkes/net-data',
-    'NET_GEN_URL=https://gen.hawkesgen.ai', `NET_GEN_KEY=${made.key}`,
-    'NET_PUBLIC_URL=wss://net.hawkesgen.ai/v1/net/ws', `NET_WORKERS=${vcpu}`, `NET_CAPACITY=${vcpu * 2000}`, `NET_NODE_ID=net-1`,
-    'NODE_ENV=production', '',
-  ].join('\n');
-  ssh('sudo install -m 640 -o root -g hawkes /dev/stdin /etc/hawkes/net.env', envText);
-  step(`made Gen key ${made.client?.id ?? ''} for the box (kept only on the box)`);
+  ssh('sudo install -m 640 -o root -g hawkes /dev/stdin /etc/hawkes/net.env', envFor(L, made.key, vcpu));
+  step(`made Gen key ${made.client?.id ?? ''} on ${L.gen} for the box (kept only on the box)`);
+} else {
+  // Never point a box at the other lane's Gen or branch: read the settings that aren't secret and compare.
+  const problem = envProblem(ssh("sudo grep -E '^(NET_GEN_URL|NET_DEPLOY_BRANCH)=' /etc/hawkes/net.env || true"), L);
+  if (problem) throw new Error(`/etc/hawkes/net.env on ${host}: ${problem}. Fix it on the box (or remove it to make a new one).`);
 }
 
 step('services');
@@ -82,6 +92,6 @@ ssh('sudo systemctl daemon-reload && sudo systemctl enable -q hawkes-net hawkes-
 console.log(ssh('for i in $(seq 1 20); do curl -s -m 3 http://127.0.0.1:8800/healthz && exit 0; sleep 1; done; sudo journalctl -u hawkes-net -n 30 --no-pager; exit 1'));
 
 step('Caddy');
-put(path.join(HERE, 'Caddyfile'), '/tmp/Caddyfile.net', 644);
+ssh('sudo install -m 644 /dev/stdin /tmp/Caddyfile.net', caddyfileFor(fs.readFileSync(path.join(HERE, 'Caddyfile'), 'utf8').replace(/\r\n/g, '\n'), L));
 ssh('sudo install -d -o caddy -g caddy /var/log/caddy && sudo -u caddy caddy validate --config /tmp/Caddyfile.net --adapter caddyfile >/dev/null 2>&1 && sudo install -m 644 /tmp/Caddyfile.net /etc/caddy/Caddyfile && sudo rm /tmp/Caddyfile.net && sudo systemctl daemon-reload && sudo systemctl reload-or-restart caddy && systemctl is-active caddy');
-step('done: https://net.hawkesgen.ai/healthz');
+step(`done: https://${L.host}/healthz (needs the DNS record ${L.host} -> ${host})`);

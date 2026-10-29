@@ -1,5 +1,5 @@
 [Unit]
-Description=Hawkes Net: check hawkesgen main every 2 minutes
+Description=Hawkes Net: check this box's lane branch every 2 minutes
 
 [Timer]
 OnBootSec=2min

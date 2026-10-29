@@ -1,11 +1,14 @@
-// The Hawkes Net box deploys itself (hawkes-net-pull.timer, every 2 minutes): when hawkesnet's main moved and the change
+// The Hawkes Net box deploys itself (hawkes-net-pull.timer, every 2 minutes): when its lane's branch moved and the change
 // touches the service (src/, the SDK in sdk/js, public/, projects.json, deploy/), it runs the tests (test/: no packages
 // needed) on a clean copy of the new commit, fast-forwards, restarts (the relay drains first) and checks health; a commit
 // whose tests or health fail is skipped. Other changes (docs, the Unity package) are fast-forwarded with no restart.
+// The branch is the box's lane: NET_DEPLOY_BRANCH in /etc/hawkes/net.env (deploy/setup.mjs writes it): `main` on live
+// (net.hawkesgen.ai, the default), `beta` on beta Net (hawkesnet.hawkesgen.ai).
 // Runs as root. No dependencies.   node deploy/pull.mjs [--dry-run]
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { laneBranch } from './lane.mjs';
 
 const DIR = '/srv/hawkes/hawkesnet';
 const STATE = '/srv/hawkes/net-data/pull.json';
@@ -15,6 +18,7 @@ const git = (...a) => execFileSync('sudo', ['-u', 'hawkes', '-H', 'git', '-C', D
 const state = (() => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return {}; } })();
 const save = () => { if (!DRY) fs.writeFileSync(STATE, JSON.stringify(state, null, 2)); };
 const NET = /^(src\/|sdk\/js\/|public\/|projects\.json|deploy\/)/;
+const BRANCH = laneBranch((() => { try { return fs.readFileSync('/etc/hawkes/net.env', 'utf8'); } catch { return ''; } })());
 
 const healthy = async () => {
   for (let i = 0; i < 20; i++) {
@@ -50,11 +54,11 @@ function testedHere(sha) {
   return state.tested.ok;
 }
 
-git('fetch', '--quiet', 'origin', 'main');
+git('fetch', '--quiet', 'origin', BRANCH);
 const head = git('rev-parse', 'HEAD');
-const tip = git('rev-parse', 'origin/main');
+const tip = git('rev-parse', `origin/${BRANCH}`);
 if (head === tip || state.bad === tip) process.exit(0);
-// Already in what's running (the box was set up from a branch ahead of main): nothing to do until main passes it.
+// Already in what's running (the box was set up from a branch ahead of its lane): nothing to do until the lane passes it.
 try { git('merge-base', '--is-ancestor', tip, head); process.exit(0); } catch { /* main has something new */ }
 const changed = git('diff', '--name-only', head, tip).split('\n').filter(Boolean);
 const touchesNet = changed.some((f) => NET.test(f));
