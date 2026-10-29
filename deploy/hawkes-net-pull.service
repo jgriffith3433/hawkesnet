@@ -1,5 +1,5 @@
 [Unit]
-Description=Hawkes Net: deploy hawkesgen main once its Hawkes Net tests pass on this box
+Description=Hawkes Net: deploy this box's lane (NET_DEPLOY_BRANCH: main or beta) once its tests pass on this box
 After=network-online.target
 
 [Service]

@@ -11,9 +11,22 @@ folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone rep
 
 - **Work goes to `beta`; `main` is live.** Hawkes Studio has hawkesnet as a product (products.json `hawkesnet`): it runs
   beta as an app (its own data folder and Gen key), playtests it, and going live is the Go live page's card (J's tap, or
-  `DEPLOY hawkesnet`), which fast-forwards `main` to the playtested beta commit. The box then deploys `main` itself
+  `DEPLOY hawkesnet`), which fast-forwards `main` to the playtested beta commit. Each box deploys its lane itself
   (`deploy/pull.mjs`, every 2 minutes: tests on a clean copy, restart with the relay draining, health check, back on
   failure). Never push `main` by hand. Run `npm run typecheck` and `npm test` first. Commit only your own files.
+- **Two boxes, one per lane; beta never touches live** (J, 2026-10-29; `deploy/lane.mjs`, test `test/lanes.test.ts`):
+
+  | | Beta | Live |
+  |---|---|---|
+  | Address | https://hawkesnet.hawkesgen.ai | https://net.hawkesgen.ai |
+  | Box | VM `hawkes-net-beta` (hawkes-prod, us-east1-b, e2-micro, free tier), made by `deploy/provision-gce.mjs` | VM `hawkes-net` (hawkes-prod, us-east4-c, e2-small, 34.86.89.28) |
+  | Follows (`NET_DEPLOY_BRANCH` in its net.env) | `beta` | `main` (also when the line is missing) |
+  | Checks API keys with (`NET_GEN_URL`, `/v1/net/whoami`) | gen-beta.hawkesgen.ai, its own "hawkesnet" key there | gen.hawkesgen.ai |
+  | Data, SSH key, state | its own disk; `net_beta_ed25519`, `net-beta.json` | `net_ed25519`, `net.json` |
+
+  Set up either with `node deploy/setup.mjs [--lane beta]` (it refuses a box whose settings name the other lane's Gen or
+  branch). The portal's beta (beta.hawkesgen.ai, keys `ustg_*`) plays on beta Net; the beta dashboard signs in there.
+  Games' beta sites reach beta Net through `window.HAWKES_NET_ENDPOINT`.
 - **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping): erasable syntax only (no enums, no
   namespaces, no parameter properties), imports end in `.ts`.
 - **One core, two places.** `sdk/js/hawkes-net-core.mjs` runs in relay nodes and in a peer-to-peer host's page. A change

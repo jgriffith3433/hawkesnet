@@ -1,5 +1,5 @@
 {
-  "$comment": "Hawkes's own games on Hawkes Net (docs/net.md 'Projects and accounts'). Every other project is made by an account on net.hawkesgen.ai and kept by the service (net_projects); an admin takes these into their account there (settings changed there sit over this file). No project, no tickets. origins: pages that may ask for player tickets with no key (the public door; http://localhost and 127.0.0.1 are always allowed). keyProjects: Gen key project patterns that may make tickets for this project besides keys for the project itself (the portal's key works in usr_* projects). transports: what the project may use. defaults: the room config a ticket starts a room with (a request's config is clamped to it). limits: per project. testPrefix: rooms named so are playtests: free and not counted in totals.",
+  "$comment": "Hawkes's own games on Hawkes Net (docs/net.md 'Projects and accounts'). Every other project is made by an account on net.hawkesgen.ai and kept by the service (net_projects); an admin takes these into their account there (settings changed there sit over this file). No project, no tickets. origins: pages that may ask for player tickets with no key (the public door; http://localhost and 127.0.0.1 are always allowed). keyProjects: Gen key project patterns that may make tickets for this project besides keys for the project itself (the portal's key works in usr_* projects; its beta's in ustg_*, on beta Net with gen-beta's keys). transports: what the project may use. defaults: the room config a ticket starts a room with (a request's config is clamped to it). limits: per project. testPrefix: rooms named so are playtests: free and not counted in totals.",
   "defaults": {
     "origins": [],
     "keyProjects": [],
@@ -14,7 +14,7 @@
       "name": "Hawkes Gen Portal",
       "$comment": "No origins: every ticket for the portal's rooms comes from the portal itself (its key), after its own checks (edit tokens, hidden worlds, invitations). An Origin header can be set by anyone outside a browser, so the door would let them into any room here.",
       "origins": [],
-      "keyProjects": ["usr_*", "ubeta_*"],
+      "keyProjects": ["usr_*", "ustg_*", "ubeta_*"],
       "defaults": { "topology": "star", "profile": "heavy", "maxPlayers": 32, "p2pMax": 4 },
       "limits": { "rooms": 2000, "playersPerRoom": 32, "players": 20000, "downBytesPerSec": 98304, "upBytesPerSec": 262144, "messageBytes": 204800 }
     },
@@ -22,7 +22,7 @@
       "name": "Hawkes Net demo",
       "$comment": "The demo shows a room moving from peer to peer to the relay, so it keeps peer to peer on.",
       "transports": ["p2p", "relay"],
-      "origins": ["https://net.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai"],
+      "origins": ["https://net.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai", "https://beta.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 64, "p2pMax": 8 },
       "limits": { "rooms": 500, "players": 5000 }
     },
