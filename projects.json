@@ -22,14 +22,14 @@
       "name": "Hawkes Net demo",
       "$comment": "The demo shows a room moving from peer to peer to the relay, so it keeps peer to peer on.",
       "transports": ["p2p", "relay"],
-      "origins": ["https://net.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai", "https://beta.hawkesgen.ai"],
+      "origins": ["https://net.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai", "https://beta.hawkesgen.ai", "https://hawkesnet.hawkesgen.ai", "https://gen-beta.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 64, "p2pMax": 8 },
       "limits": { "rooms": 500, "players": 5000 }
     },
     "doseofdestruction": {
       "name": "Dose Of Destruction",
       "$comment": "A fighting game (docs/net.md 'Express'; DoD docs/online.md): one shared lobby room on the relay ('lobby' on doseofdestruction.com, 't-lobby' on beta and localhost) for presence and the queue, and a pair room per match ('m/<hash>', topology pair) that starts peer to peer (a direct link between the two browsers: the lowest latency) and moves to the relay when they can't link. Inputs go as express frames (rollback netcode). The leaderboard's signed results are records.",
-      "origins": ["https://doseofdestruction.com", "https://www.doseofdestruction.com", "https://dod.hawkesgen.ai"],
+      "origins": ["https://doseofdestruction.com", "https://www.doseofdestruction.com", "https://dod.hawkesgen.ai", "https://sb-dod.hawkesgen.ai"],
       "transports": ["p2p", "relay"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 1000, "p2pMax": 2 },
       "limits": { "rooms": 5000, "playersPerRoom": 1000, "players": 10000, "msgsPerSec": 120, "expressPerSec": 300 }
@@ -37,14 +37,14 @@
     "sickofit": {
       "name": "Sick Of It",
       "$comment": "The ghost lobby: everyone playing is in one room ('lobby' on sickofitgame.com, 't-lobby' on beta and in playtests; 'lobby-2'... when full). Poses only: the floor rides in z (level x 1000), so other floors are far and come rarely.",
-      "origins": ["https://sickofitgame.com", "https://www.sickofitgame.com", "https://sickofit.hawkesgen.ai"],
+      "origins": ["https://sickofitgame.com", "https://www.sickofitgame.com", "https://sickofit.hawkesgen.ai", "https://sb-sickofit.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 1000, "p2pMax": 4 },
       "limits": { "rooms": 50, "playersPerRoom": 1000, "players": 10000 }
     },
     "yoobaland": {
       "name": "Yooba Land",
       "$comment": "An MMO (J, 2026-10-26: everyone in the same lobby; always on our servers): one room per area for everyone ('p1/lobby', 'p1/level-1' on yoobalandgame.com; 't-p1/...' on beta, 't-<id>/p1/...' in playtests; '.2', '.3'... past 250: avatars are compared per pair until the grid index is built, docs/net.md), on the relay only. Avatars ride the pose channel: every send within 60 m, 5 a second to 240 m, once a second past that.",
-      "origins": ["https://yoobalandgame.com", "https://www.yoobalandgame.com", "https://yoobaland.hawkesgen.ai"],
+      "origins": ["https://yoobalandgame.com", "https://www.yoobalandgame.com", "https://yoobaland.hawkesgen.ai", "https://sb-yoobaland.hawkesgen.ai"],
       "transports": ["relay"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 250, "p2pMax": 1, "interest": { "tiers": [[45, 0, 0], [130, 250, 0], [320, 1000, 250], [null, 3000, 1000]], "farAvatarM": 60 } },
       "limits": { "rooms": 100, "playersPerRoom": 250, "players": 10000 }
