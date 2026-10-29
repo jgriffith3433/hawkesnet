@@ -1,5 +1,7 @@
 # Hawkes Net — agent guide
 
+**Lanes, local dev and deploys:** `LANES.md` (branches dev -> beta -> main; `dev.bat`, `deploy-beta.bat`, `deploy-prod.bat`, `status.bat`, `links.bat`, `sync.bat`; beta and live links).
+
 The multiplayer service for every Hawkes game and for outside developers (net.hawkesgen.ai). `README.md` has the layout,
 `docs/net.md` the design and what is built (its first section wins over the rest). This repo was Hawkes Gen's `net/`
 folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone repository"); its history before that is in
