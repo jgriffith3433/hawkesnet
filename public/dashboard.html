@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hawkes Net</title>
-<meta name="description" content="Multiplayer for web, Babylon.js and Unity games. Your hawkesgen.ai account, your projects, their players, rooms and tickets live, the SDKs and the docs.">
+<meta name="description" content="Multiplayer for web, Babylon.js and Unity games. Your hawkesgames.com account, your projects, their players, rooms and tickets live, the SDKs and the docs.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='9' cy='16' r='5' fill='%232f6fed'/%3E%3Ccircle cx='23' cy='9' r='4' fill='%2316a34a'/%3E%3Ccircle cx='23' cy='23' r='4' fill='%2316a34a'/%3E%3Cpath d='M13 14l6-4M13 18l6 4' stroke='%232f6fed' stroke-width='2'/%3E%3C/svg%3E">
 <style>
   :root { --bg: #f6f7f9; --card: #fff; --ink: #14161b; --muted: #5d6470; --line: #e3e6ea; --accent: #2f6fed; --ok: #16a34a; --warn: #b45309; --bad: #dc2626; --code: #0f1115; --code-ink: #e8eaf0; }
@@ -128,7 +128,7 @@
   <section id="docs" class="hidden">
   <h1>Docs</h1>
   <h2 id="quickstart" style="margin-top:18px">Quickstart</h2>
-  <p><span class="step">1</span><b>An account.</b> Your hawkesgen.ai account (making one is free). <span class="step" style="margin-left:6px">2</span><b>A project.</b> Make one on your <a href="#">Projects</a> page: its id is what your game passes as <code>project</code>. <span class="step" style="margin-left:6px">3</span><b>The SDK.</b> One ES module for the web and Babylon, a package for Unity WebGL. Every room runs on our relay, and each project's page shows its players, rooms and tickets live.</p>
+  <p><span class="step">1</span><b>An account.</b> Your hawkesgames.com account (making one is free). <span class="step" style="margin-left:6px">2</span><b>A project.</b> Make one on your <a href="#">Projects</a> page: its id is what your game passes as <code>project</code>. <span class="step" style="margin-left:6px">3</span><b>The SDK.</b> One ES module for the web and Babylon, a package for Unity WebGL. Every room runs on our relay, and each project's page shows its players, rooms and tickets live.</p>
 
   <h3 id="noserver">A game with no server: shared rooms</h3>
 <pre><code>import { lobby } from 'https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs';
@@ -147,7 +147,7 @@ lob.send('chat', 'hello');</code></pre>
   <p>Decide who may join which room (your logins, your matchmaking), then ask for a ticket with your API key and hand it to the page.</p>
 <pre><code>// Node (Express); the same in any language: one HTTPS POST with your key.
 app.post('/ticket', async (req, res) =&gt; {
-  const r = await fetch('https://hawkesgen.ai/v1/net/rooms/ticket', {
+  const r = await fetch('https://hawkesgames.com/v1/net/rooms/ticket', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.HAWKESGEN_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ project: 'your-project', room: req.body.room, name: req.user.name, sub: req.user.id }),
@@ -196,18 +196,18 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
   <h2 id="limits">Limits and pricing</h2>
   <ul>
     <li><b>Free account:</b> projects, the dashboard and the SDK; your game on localhost in test rooms; up to 3 rooms, 16 players and 8 a room per project.</li>
-    <li><b>Paid account</b> (credits or a plan on hawkesgen.ai): your own sites and server tickets; up to 64 players a room, 200 rooms, 2,000 players a project.</li>
+    <li><b>Paid account</b> (credits or a plan on hawkesgames.com): your own sites and server tickets; up to 64 players a room, 200 rooms, 2,000 players a project.</li>
     <li>Every room runs on our relay. Peer to peer (players linked to a host) is a project setting, off unless you turn it on.</li>
     <li>While we set prices, using it costs no credits. Each project's page counts player-minutes and relay data, so you see what you'd pay before you pay anything.</li>
   </ul>
   </section>
 </main>
 
-<footer><div class="wrap"><span>Hawkes Net, part of <a href="https://hawkesgen.ai/">Hawkes Gen</a></span><span><a href="https://hawkesgen.ai/legal#terms">Terms</a> · <a href="https://hawkesgen.ai/legal#privacy">Privacy</a> · <a href="mailto:support@hawkesgen.ai">support@hawkesgen.ai</a></span></div></footer>
+<footer><div class="wrap"><span>Hawkes Net, part of <a href="https://hawkesgames.com/">Hawkes Gen</a></span><span><a href="https://hawkesgames.com/legal#terms">Terms</a> · <a href="https://hawkesgames.com/legal#privacy">Privacy</a> · <a href="mailto:support@hawkesgen.ai">support@hawkesgen.ai</a></span></div></footer>
 
 <script>
-// The dashboard of net.hawkesgen.ai. Your account lives on hawkesgen.ai: this page reads and changes your projects
-// there with your hawkesgen.ai session (same site, so the cookie goes; the portal allows only this origin), and the
+// The dashboard of Hawkes Net (net.hawkesgames.com). Your account lives on hawkesgames.com: this page reads and changes your projects
+// there with your hawkesgames.com session (same site, so the cookie goes; the portal allows only this origin), and the
 // portal asks the Hawkes Net service for you. The service's own status is read here. Views: #projects (or nothing), #p/<id>
 // (a project: #p/<id>/rooms, /tickets, /settings, /connect).
 (() => {
@@ -217,11 +217,16 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
   const ago = (t) => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : s < 86400 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} d`; };
   const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const kb = (b) => (b > 1e6 ? `${num(b / 1e6, 1)} MB` : `${num(b / 1e3, 1)} KB`);
-  // The portal: hawkesgen.ai; on Studio's beta (hawkesnet.hawkesgen.ai) the portal's beta, with its own test accounts
-  // (beta never signs in to live); or ?portal= on a test copy of this page (not on the real one).
+  // The portal: hawkesgames.com, from this page's own name under it (net.hawkesgames.com: the same site, so the portal's
+  // session cookie goes along); on beta (net-beta.hawkesgames.com) the portal's beta, with its own test accounts (beta
+  // never signs in to live); or ?portal= on a test copy of this page (not on the real one). The relay's names
+  // (net.hawkesgen.ai, hawkesnet.hawkesgen.ai) still answer for the SDKs and players: a visit to this page there is sent
+  // to the dashboard's own name, where signing in works.
+  const MOVED = { 'net.hawkesgen.ai': 'net.hawkesgames.com', 'hawkesnet.hawkesgen.ai': 'net-beta.hawkesgames.com' }[location.hostname];
+  if (MOVED) location.replace(`https://${MOVED}/${location.search}${location.hash}`);
+  const OURS = { 'net.hawkesgames.com': 'https://hawkesgames.com', 'net-beta.hawkesgames.com': 'https://beta.hawkesgames.com' }[location.hostname];
   const asked = new URLSearchParams(location.search).get('portal');
-  const BETA_PORTAL = { 'hawkesnet.hawkesgen.ai': 'https://beta.hawkesgen.ai' }[location.hostname];
-  const PORTAL = location.hostname !== 'net.hawkesgen.ai' && asked ? asked.replace(/\/+$/, '') : BETA_PORTAL ?? 'https://hawkesgen.ai';
+  const PORTAL = location.hostname !== 'net.hawkesgames.com' && asked ? asked.replace(/\/+$/, '') : OURS ?? 'https://hawkesgames.com';
   const api = async (method, path, body) => {
     const r = await fetch(`${PORTAL}${path}`, { method, credentials: 'include', headers: body !== undefined ? { 'Content-Type': 'application/json' } : {}, body: body !== undefined ? JSON.stringify(body) : undefined }).catch(() => null);
     if (!r) return { status: 0, data: { error: `${new URL(PORTAL).host} is not answering` } };
@@ -275,7 +280,7 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
     $('topnav').classList.remove('hidden');
     $('who').innerHTML = `<div class="menu"><button class="btn small" type="button" id="menuBtn" aria-haspopup="true" aria-expanded="false">${esc(me.email || me.project)} <span class="pill ${me.paid ? 'paid' : ''}">${plan}</span></button>
       <div class="sheet hidden" id="menuSheet" role="menu"><div class="who-line">${esc(me.name || '')}${me.name ? '<br>' : ''}${esc(me.email || '')}<br>account <code>${esc(me.project)}</code></div>
-      <a href="#account" role="menuitem">Account and API key</a><a href="${PORTAL}/app" role="menuitem">hawkesgen.ai</a>${me.paid ? '' : `<a href="${PORTAL}/app#credits" role="menuitem">Get credits</a>`}<button type="button" id="signOut" role="menuitem">Sign out</button></div></div>`;
+      <a href="#account" role="menuitem">Account and API key</a><a href="${PORTAL}/app" role="menuitem">hawkesgames.com</a>${me.paid ? '' : `<a href="${PORTAL}/app#credits" role="menuitem">Get credits</a>`}<button type="button" id="signOut" role="menuitem">Sign out</button></div></div>`;
     const btn = $('menuBtn'), sheet = $('menuSheet');
     btn.addEventListener('click', (e) => { e.stopPropagation(); const open = sheet.classList.toggle('hidden') === false; btn.setAttribute('aria-expanded', String(open)); });
     document.addEventListener('click', (e) => { if (!sheet.contains(e.target)) { sheet.classList.add('hidden'); btn.setAttribute('aria-expanded', 'false'); } });
@@ -293,7 +298,7 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
     $('app').innerHTML = `
       <div class="login">
         <h1>Sign in to Hawkes Net</h1>
-        <p class="note" style="margin-top:0">With your hawkesgen.ai account. New here? Making one is free.</p>
+        <p class="note" style="margin-top:0">With your hawkesgames.com account. New here? Making one is free.</p>
         <div class="card">
           <a class="btn wide" href="${PORTAL}/auth/google?next=/net/back" id="google">Continue with Google</a>
           <div class="or">or with email</div>
@@ -344,7 +349,7 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
         if (r.status !== 200) return say(r.data.error || 'That did not work. Try again.');
         if (r.data.apiKey) minted = r.data.apiKey;
         const st = await loadMe();
-        if (st !== 200) return say('Signed in, but this browser blocks the cookie for hawkesgen.ai here. Allow it, or continue with Google.');
+        if (st !== 200) return say('Signed in, but this browser blocks the cookie for hawkesgames.com here. Allow it, or continue with Google.');
         show();
       } finally { go.disabled = false; }
     });
@@ -439,9 +444,9 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
       <div class="card"><div class="row"><div><b>${esc(me.name || me.email || me.project)}</b><br><span class="note">${esc(me.email || '')} · account <code>${esc(me.project)}</code></span></div>
         <span class="pill ${me.paid ? 'paid' : ''}">${me.admin ? 'admin' : me.paid ? 'paid' : 'free'}</span></div>
         ${me.paid ? '<p class="note">Your projects can list their sites and take tickets from your servers.</p>' : `<p class="note warn">Free account: build and test on localhost. <a href="${PORTAL}/app#credits">Get credits</a> to put your games online.</p>`}
-        <p class="note">Your account is your hawkesgen.ai account: <a href="${PORTAL}/app">manage it there</a>.</p></div>
+        <p class="note">Your account is your hawkesgames.com account: <a href="${PORTAL}/app">manage it there</a>.</p></div>
       <h2>API key</h2>
-      <div class="card">${keyBlock()}<p class="note">Your servers use it to ask for tickets (<code>POST https://hawkesgen.ai/v1/net/rooms/ticket</code>) in any of your projects. Keep it on your server.</p></div>
+      <div class="card">${keyBlock()}<p class="note">Your servers use it to ask for tickets (<code>POST https://hawkesgames.com/v1/net/rooms/ticket</code>) in any of your projects. Keep it on your server.</p></div>
       <h2>Downloads</h2>
       <div class="card"><ul style="margin:0">
         <li><a href="/sdk/hawkes-net@1.mjs">hawkes-net.mjs</a> and <a href="/sdk/hawkes-net-core.mjs">hawkes-net-core.mjs</a> (keep them side by side), <a href="/sdk/hawkes-net@1.d.ts">hawkes-net.d.ts</a></li>
@@ -453,7 +458,7 @@ mp.share(crate, 'crate-1'); // the host simulates it; everyone sees it move</cod
   // ------------------------------------------------------------------ a project
   async function loadProject(id) {
     const r = await api('GET', `/v1/net/projects/${encodeURIComponent(id)}`);
-    detail = r.status === 200 ? r.data : { id, error: r.data.error || `hawkesgen.ai answered ${r.status}` };
+    detail = r.status === 200 ? r.data : { id, error: r.data.error || `hawkesgames.com answered ${r.status}` };
   }
   function chart(online) {
     if (!online?.length) return '';
@@ -602,7 +607,7 @@ lob.join('lobby');
 <pre><code>var lobby = new HawkesNetLobby(new HawkesNetOptions { project = "${esc(d.id)}", name = playerName }, "${esc(host)}");
 lobby.Join("lobby");</code></pre>
       <h3>Your server (tickets with your key)</h3>
-<pre><code>curl -X POST https://hawkesgen.ai/v1/net/rooms/ticket \\
+<pre><code>curl -X POST https://hawkesgames.com/v1/net/rooms/ticket \\
   -H "Authorization: Bearer $HAWKESGEN_KEY" -H "Content-Type: application/json" \\
   -d '{"project":"${esc(d.id)}","room":"match-1","name":"Ada","sub":"player-42"}'</code></pre>
       <h3>Downloads</h3>
@@ -630,7 +635,7 @@ lobby.Join("lobby");</code></pre>
     if (problem) { q.delete('signin_error'); q.delete('signin'); history.replaceState(null, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash); }
     const st = await loadMe();
     if (st !== 200) {
-      signedOut(problem || (st !== 401 && st !== 0 ? 'Could not reach hawkesgen.ai right now. Try again in a moment.' : ''));
+      signedOut(problem || (st !== 401 && st !== 0 ? 'Could not reach hawkesgames.com right now. Try again in a moment.' : ''));
       return;
     }
     show();

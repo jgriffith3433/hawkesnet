@@ -44,8 +44,8 @@ test("the beta box's settings: gen-beta, its own address and node, one worker, f
 test("Caddy serves the lane's own name", () => {
   const text = fs.readFileSync(new URL('../deploy/Caddyfile', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
   const beta = caddyfileFor(text, lane('beta'));
-  assert.match(beta, /^hawkesnet\.hawkesgen\.ai \{$/m);
-  assert.doesNotMatch(beta, /^net\.hawkesgen\.ai \{$/m);
+  assert.match(beta, /^hawkesnet\.hawkesgen\.ai, net-beta\.hawkesgames\.com \{$/m);
+  assert.doesNotMatch(beta, /^net\.hawkesgen\.ai/m);
   assert.equal(caddyfileFor(text, lane('live')), text);
 });
 

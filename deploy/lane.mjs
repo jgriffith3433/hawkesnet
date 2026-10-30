@@ -4,11 +4,13 @@
 // deploy/provision-gce.mjs (the beta VM). No dependencies.
 export const LANES = {
   live: {
-    host: 'net.hawkesgen.ai', branch: 'main', gen: 'https://gen.hawkesgen.ai', ownerKey: 'genKey',
+    // dashboard: the developer dashboard's own name, under the portal's domain (hawkesgames.com) because the page reads the
+    // portal with its session cookie; the relay, tickets and the SDKs stay on `host` (docs/net.md, "The dashboard").
+    host: 'net.hawkesgen.ai', dashboard: 'net.hawkesgames.com', branch: 'main', gen: 'https://gen.hawkesgen.ai', ownerKey: 'genKey',
     nodeId: 'net-1', stateFile: 'net.json', keyName: 'hawkes-net box',
   },
   beta: {
-    host: 'hawkesnet.hawkesgen.ai', branch: 'beta', gen: 'https://gen-beta.hawkesgen.ai', ownerKey: 'genBetaKey',
+    host: 'hawkesnet.hawkesgen.ai', dashboard: 'net-beta.hawkesgames.com', branch: 'beta', gen: 'https://gen-beta.hawkesgen.ai', ownerKey: 'genBetaKey',
     nodeId: 'net-beta-1', stateFile: 'net-beta.json', keyName: 'hawkes-net beta box',
     // An e2-micro (1 GB): one relay worker keeps the box well inside its memory; beta's players are playtests.
     workers: 1, capacity: 500,
@@ -40,10 +42,11 @@ export function envFor(l, genKey, vcpu) {
   ].join('\n');
 }
 
-/** deploy/Caddyfile (written for net.hawkesgen.ai) for this lane's address. */
+/** deploy/Caddyfile (written for live: "net.hawkesgen.ai, net.hawkesgames.com {") for this lane's names. */
 export function caddyfileFor(text, l) {
-  if (!/^net\.hawkesgen\.ai \{$/m.test(text)) throw new Error('deploy/Caddyfile has no "net.hawkesgen.ai {" site block');
-  return text.replace(/^net\.hawkesgen\.ai \{$/m, `${l.host} {`);
+  const block = /^net\.hawkesgen\.ai, net\.hawkesgames\.com \{$/m;
+  if (!block.test(text)) throw new Error('deploy/Caddyfile has no "net.hawkesgen.ai, net.hawkesgames.com {" site block');
+  return text.replace(block, `${l.host}, ${l.dashboard} {`);
 }
 
 /** What is wrong with a box's existing settings for this lane (a beta box on live Gen, or the other way), or null. */

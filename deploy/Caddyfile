@@ -9,7 +9,9 @@
 	}
 }
 
-net.hawkesgen.ai {
+# net.hawkesgames.com is the developer dashboard's name (beside the portal, hawkesgames.com, for its sign-in cookie);
+# the same server answers both. deploy/lane.mjs caddyfileFor writes the beta box's names over this line.
+net.hawkesgen.ai, net.hawkesgames.com {
 	encode {
 		match {
 			header Content-Type text/*

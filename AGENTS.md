@@ -7,6 +7,12 @@ The multiplayer service for every Hawkes game and for outside developers (net.ha
 folder until 2026-10-26 (J: "I would like hawkesnet to be its own standalone repository"); its history before that is in
 `jgriffith3433/hawkesgen`.
 
+**The dashboard's names** (2026-10-29, hawkesgenwebsite `docs/domain-move.md`): the portal moves to hawkesgames.com, so
+the dashboard is **net.hawkesgames.com** (beta **net-beta.hawkesgames.com**): it reads the portal with its session cookie,
+which only goes to the same site. The relay, tickets and SDKs stay on net.hawkesgen.ai / hawkesnet.hawkesgen.ai, and the
+dashboard page there sends visitors to its new name. Caddy serves both (`deploy/Caddyfile`, `deploy/lane.mjs`
+`dashboard`); a Caddy change reaches a box only through `node deploy/setup.mjs [--lane beta]`.
+
 ## Hard rules
 
 - **Work goes to `beta`; `main` is live.** Hawkes Studio has hawkesnet as a product (products.json `hawkesnet`): it runs
