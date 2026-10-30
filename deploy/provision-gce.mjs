@@ -105,7 +105,7 @@ const rows = (Array.isArray(have) ? have : have.result ?? []).filter((r) => r.na
 const same = rows.find((r) => r.type === 'A' && r.content === address);
 if (same) log(`DNS: A ${L.host} -> ${address} already there`);
 else {
-  for (const r of rows) { cf('dns', 'records', 'delete', '-z', DNS_ZONE, r.id); log(`DNS: removed old ${r.type} ${L.host} -> ${r.content}`); }
+  for (const r of rows) { cf('dns', 'records', 'delete', '-z', DNS_ZONE, r.id, '--force'); log(`DNS: removed old ${r.type} ${L.host} -> ${r.content}`); }
   cf('dns', 'records', 'create', '-z', DNS_ZONE, '--body', JSON.stringify({ type: 'A', name: L.host, content: address, ttl: 300, proxied: false }));
   log(`DNS: A ${L.host} -> ${address}`);
 }
