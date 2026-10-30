@@ -4,12 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 // @ts-ignore: a plain .mjs module (deploy/ has no types)
-import { lane, laneBranch, envFor, caddyfileFor, envProblem } from '../deploy/lane.mjs';
+import { lane, laneBranch, envFor, caddyfileFor, envProblem, envGenMoved } from '../deploy/lane.mjs';
 
 test('beta and live never share a Gen, a branch, an address or a node id', () => {
   const live = lane('live'), beta = lane('beta');
-  assert.equal(beta.gen, 'https://gen-beta.hawkesgen.ai');
-  assert.equal(live.gen, 'https://gen.hawkesgen.ai');
+  assert.equal(beta.gen, 'https://beta.hawkesgen.ai');
+  assert.equal(live.gen, 'https://hawkesgen.ai');
   assert.equal(beta.host, 'hawkesnet.hawkesgen.ai');
   assert.equal(live.host, 'net.hawkesgen.ai');
   for (const k of ['gen', 'branch', 'host', 'nodeId', 'stateFile', 'ownerKey']) assert.notEqual(beta[k], live[k], k);
@@ -18,27 +18,33 @@ test('beta and live never share a Gen, a branch, an address or a node id', () =>
 
 test("a box's branch comes from its settings; anything but beta is live's main", () => {
   assert.equal(laneBranch('NET_DEPLOY_BRANCH=beta\n'), 'beta');
-  assert.equal(laneBranch('NET_PORT=8800\nNET_GEN_URL=https://gen.hawkesgen.ai\n'), 'main', 'the live box written before lanes');
+  assert.equal(laneBranch('NET_PORT=8800\nNET_GEN_URL=https://hawkesgen.ai\n'), 'main', 'the live box written before lanes');
   assert.equal(laneBranch('NET_DEPLOY_BRANCH=dev\n'), 'main');
   assert.equal(laneBranch(''), 'main');
 });
 
 test("the beta box's settings: gen-beta, its own address and node, one worker, following beta", () => {
   const text = envFor(lane('beta'), 'hg_test', 2);
-  assert.match(text, /^NET_GEN_URL=https:\/\/gen-beta\.hawkesgen\.ai$/m);
+  assert.match(text, /^NET_GEN_URL=https:\/\/beta\.hawkesgen\.ai$/m);
   assert.match(text, /^NET_PUBLIC_URL=wss:\/\/hawkesnet\.hawkesgen\.ai\/v1\/net\/ws$/m);
   assert.match(text, /^NET_NODE_ID=net-beta-1$/m);
   assert.match(text, /^NET_WORKERS=1$/m);
   assert.equal(laneBranch(text), 'beta');
   assert.equal(envProblem(text, lane('beta')), null);
-  assert.match(String(envProblem(text, lane('live'))), /gen-beta/, 'a beta box is never taken for live');
+  assert.match(String(envProblem(text, lane('live'))), /beta\.hawkesgen/, 'a beta box is never taken for live');
   const live = envFor(lane('live'), 'hg_test', 2);
-  assert.match(live, /^NET_GEN_URL=https:\/\/gen\.hawkesgen\.ai$/m);
+  assert.match(live, /^NET_GEN_URL=https:\/\/hawkesgen\.ai$/m);
   assert.match(live, /^NET_WORKERS=2$/m);
   assert.equal(laneBranch(live), 'main');
   // The live box's file from before lanes (no branch line) is still live.
-  assert.equal(envProblem('NET_GEN_URL=https://gen.hawkesgen.ai\n', lane('live')), null);
-  assert.ok(envProblem('NET_GEN_URL=https://gen.hawkesgen.ai\n', lane('beta')));
+  assert.equal(envProblem('NET_GEN_URL=https://hawkesgen.ai\n', lane('live')), null);
+  assert.ok(envProblem('NET_GEN_URL=https://hawkesgen.ai\n', lane('beta')));
+  // Gen's old names are the same Gen (a box set up before 2026-10-29), and setup moves them to the lane's.
+  assert.equal(envProblem('NET_GEN_URL=https://gen.hawkesgen.ai\nNET_DEPLOY_BRANCH=main\n', lane('live')), null);
+  assert.equal(envProblem('NET_GEN_URL=https://gen-beta.hawkesgen.ai\nNET_DEPLOY_BRANCH=beta\n', lane('beta')), null);
+  assert.ok(envProblem('NET_GEN_URL=https://gen.hawkesgen.ai\nNET_DEPLOY_BRANCH=beta\n', lane('beta')));
+  assert.equal(envGenMoved('A=1\nNET_GEN_URL=https://gen.hawkesgen.ai\n', lane('live')), 'A=1\nNET_GEN_URL=https://hawkesgen.ai\n');
+  assert.equal(envGenMoved('NET_GEN_URL=https://hawkesgen.ai\n', lane('live')), null);
 });
 
 test("Caddy serves the lane's own name", () => {

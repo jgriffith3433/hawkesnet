@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { lane, envFor, caddyfileFor, envProblem } from './lane.mjs';
+import { lane, envFor, caddyfileFor, envProblem, envGenMoved } from './lane.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const arg = (k) => { const i = process.argv.indexOf(`--${k}`); return i >= 0 ? process.argv[i + 1] : undefined; };
@@ -82,6 +82,11 @@ if (ssh('sudo test -s /etc/hawkes/net.env && echo yes || echo no') !== 'yes') {
   // Never point a box at the other lane's Gen or branch: read the settings that aren't secret and compare.
   const problem = envProblem(ssh("sudo grep -E '^(NET_GEN_URL|NET_DEPLOY_BRANCH)=' /etc/hawkes/net.env || true"), L);
   if (problem) throw new Error(`/etc/hawkes/net.env on ${host}: ${problem}. Fix it on the box (or remove it to make a new one).`);
+  // Gen's old name (gen.hawkesgen.ai, gen-beta.hawkesgen.ai) moved to the lane's; the restart below picks it up.
+  if (envGenMoved(ssh("sudo grep -E '^NET_GEN_URL=' /etc/hawkes/net.env || true"), L)) {
+    ssh(`sudo sed -i 's#^NET_GEN_URL=.*#NET_GEN_URL=${L.gen}#' /etc/hawkes/net.env`);
+    step(`NET_GEN_URL is now ${L.gen}`);
+  }
 }
 
 step('services');

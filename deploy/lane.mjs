@@ -6,11 +6,14 @@ export const LANES = {
   live: {
     // dashboard: the developer dashboard's own name, under the portal's domain (hawkesgames.com) because the page reads the
     // portal with its session cookie; the relay, tickets and the SDKs stay on `host` (docs/net.md, "The dashboard").
-    host: 'net.hawkesgen.ai', dashboard: 'net.hawkesgames.com', branch: 'main', gen: 'https://gen.hawkesgen.ai', ownerKey: 'genKey',
+    host: 'net.hawkesgen.ai', dashboard: 'net.hawkesgames.com', branch: 'main', gen: 'https://hawkesgen.ai', ownerKey: 'genKey',
+    // Gen's old names (J, 2026-10-29: going away): a box still set to one is the same Gen; setup.mjs moves it to `gen`.
+    oldGen: ['https://gen.hawkesgen.ai'],
     nodeId: 'net-1', stateFile: 'net.json', keyName: 'hawkes-net box',
   },
   beta: {
-    host: 'hawkesnet.hawkesgen.ai', dashboard: 'net-beta.hawkesgames.com', branch: 'beta', gen: 'https://gen-beta.hawkesgen.ai', ownerKey: 'genBetaKey',
+    host: 'hawkesnet.hawkesgen.ai', dashboard: 'net-beta.hawkesgames.com', branch: 'beta', gen: 'https://beta.hawkesgen.ai', ownerKey: 'genBetaKey',
+    oldGen: ['https://gen-beta.hawkesgen.ai'],
     nodeId: 'net-beta-1', stateFile: 'net-beta.json', keyName: 'hawkes-net beta box',
     // An e2-micro (1 GB): one relay worker keeps the box well inside its memory; beta's players are playtests.
     workers: 1, capacity: 500,
@@ -51,8 +54,14 @@ export function caddyfileFor(text, l) {
 
 /** What is wrong with a box's existing settings for this lane (a beta box on live Gen, or the other way), or null. */
 export function envProblem(envText, l) {
-  const gen = /^NET_GEN_URL=(.*)$/m.exec(envText ?? '')?.[1]?.trim() || 'https://gen.hawkesgen.ai';
-  if (gen.replace(/\/+$/, '') !== l.gen) return `NET_GEN_URL is ${gen}, lane ${l.name} uses ${l.gen}`;
+  const gen = /^NET_GEN_URL=(.*)$/m.exec(envText ?? '')?.[1]?.trim() || 'https://hawkesgen.ai';
+  if (![l.gen, ...(l.oldGen ?? [])].includes(gen.replace(/\/+$/, ''))) return `NET_GEN_URL is ${gen}, lane ${l.name} uses ${l.gen}`;
   if (laneBranch(envText) !== l.branch) return `the box follows ${laneBranch(envText)}, lane ${l.name} follows ${l.branch}`;
   return null;
+}
+
+/** A box's /etc/hawkes/net.env with an old Gen name moved to the lane's (setup.mjs), or null when nothing changes. */
+export function envGenMoved(envText, l) {
+  const gen = /^NET_GEN_URL=(.*)$/m.exec(envText ?? '')?.[1]?.trim().replace(/\/+$/, '');
+  return gen && (l.oldGen ?? []).includes(gen) ? envText.replace(/^NET_GEN_URL=.*$/m, `NET_GEN_URL=${l.gen}`) : null;
 }

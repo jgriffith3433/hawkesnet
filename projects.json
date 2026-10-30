@@ -22,7 +22,7 @@
       "name": "Hawkes Net demo",
       "$comment": "The demo shows a room moving from peer to peer to the relay, so it keeps peer to peer on.",
       "transports": ["p2p", "relay"],
-      "origins": ["https://net.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai", "https://beta.hawkesgen.ai", "https://hawkesnet.hawkesgen.ai", "https://gen-beta.hawkesgen.ai"],
+      "origins": ["https://hawkesgames.com", "https://www.hawkesgames.com", "https://beta.hawkesgames.com", "https://net.hawkesgames.com", "https://net-beta.hawkesgames.com", "https://net.hawkesgen.ai", "https://hawkesnet.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://beta.hawkesgen.ai", "https://gen.hawkesgen.ai", "https://gen-beta.hawkesgen.ai", "https://hawkesgenwebsite.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 64, "p2pMax": 8 },
       "limits": { "rooms": 500, "players": 5000 }
     },

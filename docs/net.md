@@ -270,7 +270,7 @@ mode* working. The portal's JSON protocol (v2) must keep working for pages alrea
         ├─ transport relay ─ wss ── CloudFront ── relay node (Graviton, our process)
         └─ 'auto': p2p while small and healthy, then the relay, same room, same peer ids
 
- Hawkes Gen (gen.hawkesgen.ai)                      Relay nodes (n1, n2, ...)
+ Hawkes Gen (hawkesgen.ai)                      Relay nodes (n1, n2, ...)
    POST /v1/net/ticket  (signs tickets)                 hold rooms (a room lives on ONE node)
    directory: which node holds which room               verify tickets offline (public key only)
    per-project limits, usage -> /v1/usage               report usage and room events to Gen

@@ -6,7 +6,7 @@
 //
 //   node src/hub.ts        settings from the environment (the box: /etc/hawkes/net.env, written by deploy/setup.mjs):
 //     NET_PORT (8800), NET_HOST (127.0.0.1: Caddy in front), NET_DATA_DIR (the directory and signing keys),
-//     NET_GEN_URL (https://gen.hawkesgen.ai), NET_GEN_KEY (a Gen key for the project "hawkesnet"),
+//     NET_GEN_URL (https://hawkesgen.ai), NET_GEN_KEY (a Gen key for the project "hawkesnet"),
 //     NET_PUBLIC_URL (wss://net.hawkesgen.ai/v1/net/ws), NET_WORKERS, NET_CAPACITY, NET_NODE_ID, NET_USAGE_MS,
 //     NET_TRUST_LOCALHOST=1 (a developer's machine only: pages on localhost may use the public ticket door)
 import http from 'node:http';
@@ -65,7 +65,7 @@ export function genKeyCheck(genUrl: string, log: (s: string) => void) {
 
 export async function startHub(o: HubOptions = {}) {
   const log = o.log ?? ((s: string) => console.log(`[net] ${s}`));
-  const genUrl = (o.genUrl ?? 'https://gen.hawkesgen.ai').replace(/\/+$/, '');
+  const genUrl = (o.genUrl ?? 'https://hawkesgen.ai').replace(/\/+$/, '');
   api.useKeyCheck(o.checkKey ?? genKeyCheck(genUrl, log));
 
   // Usage: to Gen once a minute, kept until it lands (or to the caller's sink).
