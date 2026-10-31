@@ -1,0 +1,34 @@
+# Read-only: both lanes' relay /healthz (net.hawkesgen.ai follows main, hawkesnet.hawkesgen.ai follows beta), with the
+# version and commit each one runs, and whether that matches the branch's head (the VMs pull every 2 minutes).
+#   gh workflow run ops-net-health.yml --repo jgriffith3433/hawkesnet
+name: ops-net-health
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ops-net-health
+  cancel-in-progress: true
+jobs:
+  health:
+    name: Health of both lanes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          fail=0
+          check() {
+            out=$(curl -s --max-time 20 -o body.txt -w '%{http_code}' "https://$2/healthz" || echo 000)
+            commit=$(jq -r '.commit // ""' body.txt 2>/dev/null)
+            head=$(gh api "repos/${{ github.repository }}/commits/$3" -q .sha 2>/dev/null | cut -c1-7)
+            state="up to date"; [ -n "$commit" ] && [ "$commit" != "$head" ] && state="runs $commit, $3 is $head (a pull is due every 2 min; older than that means the pull timer is stuck)"
+            { echo "### $1 ($2): HTTP $out, $state"; echo '```'; head -c 800 body.txt; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            echo "$1: $out $state"
+            [ "$out" = 200 ] || fail=1
+          }
+          check production net.hawkesgen.ai main
+          check beta hawkesnet.hawkesgen.ai beta
+          exit $fail

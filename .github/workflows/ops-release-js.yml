@@ -1,0 +1,45 @@
+# Publishes the JS SDK (sdk/js) to jgriffith3433/hawkesnet-js, tagged v<version>, with tools/release-js.mjs --push
+# (was run on J's laptop). Production environment (main only): games pin these tags.
+# Needs HAWKESNET_JS_TOKEN in the production environment: a fine-grained PAT with Contents read/write on hawkesnet-js only.
+#   gh workflow run ops-release-js.yml --repo jgriffith3433/hawkesnet --ref main -f push=true
+name: ops-release-js
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: false = commit and tag in the runner only (a dry run)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ops-release-js
+  cancel-in-progress: false
+jobs:
+  release:
+    name: Release @hawkesgen/net
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Check the token
+        env:
+          HAS_TOKEN: ${{ secrets.HAWKESNET_JS_TOKEN != '' }}
+        run: '[ "$HAS_TOKEN" = true ] || { echo "HAWKESNET_JS_TOKEN is not set in the production environment"; exit 1; }'
+      - uses: actions/checkout@v4
+        with:
+          path: hawkesnet
+      - uses: actions/checkout@v4
+        with:
+          repository: jgriffith3433/hawkesnet-js
+          token: ${{ secrets.HAWKESNET_JS_TOKEN }}
+          path: hawkesnet-js
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Release
+        run: |
+          git -C hawkesnet-js config user.name "jgriffith3433"
+          git -C hawkesnet-js config user.email "jgriffith3433@users.noreply.github.com"
+          if [ "${{ inputs.push }}" = true ]; then node hawkesnet/tools/release-js.mjs --push; else node hawkesnet/tools/release-js.mjs; fi
