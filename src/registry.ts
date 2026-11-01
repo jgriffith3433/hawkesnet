@@ -13,7 +13,7 @@ export type RoomConfig = { topology: 'star' | 'pair'; profile: 'light' | 'medium
 export type Limits = { rooms: number; playersPerRoom: number; players: number; downBytesPerSec: number; upBytesPerSec: number; msgsPerSec: number; innerPerSec: number; messageBytes: number; ents: number; states: number; egressBytesPerSec: number; monthlyBytes: number };
 export type Tier = 'free' | 'paid' | 'hawkes';
 export type NetProject = {
-  id: string; name: string; origins: string[]; keyProjects: string[]; transports: ('p2p' | 'relay')[]; signal: string;
+  id: string; name: string; origins: string[]; testOrigins: string[]; keyProjects: string[]; transports: ('p2p' | 'relay')[]; signal: string;
   defaults: RoomConfig; limits: Limits; testPrefix: string;
   /** Known: in the file or the service's own projects (an unknown id gets nothing). */
   listed: boolean;
@@ -67,6 +67,9 @@ export function netProject(id: string): NetProject {
     id,
     name: String(r?.name ?? p?.name ?? id),
     origins: [...(r && r.origins ? r.origins : Array.isArray(pick('origins')) ? pick('origins') : [])].map(clean),
+    // Shared hosts (Studio's preview sites, where every customer's builds live side by side): their pages get tickets
+    // for the project's test rooms only, never its live ones. From projects.json only.
+    testOrigins: (p && Array.isArray(p.testOrigins) ? p.testOrigins : []).map(clean),
     keyProjects: Array.isArray(pick('keyProjects')) ? pick('keyProjects').map(String) : [],
     transports,
     signal: String(pick('signal') ?? 'hawkes'),
@@ -92,6 +95,7 @@ export function originAllowed(p: NetProject, origin: string, room = '') {
   const o = clean(origin);
   if (!o || !p.listed) return false;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?$/.test(o)) return trustLocalhost() || ((p.origins.length > 0 || p.owner !== null) && room.startsWith(p.testPrefix));
+  if (p.testOrigins.includes(o)) return room.startsWith(p.testPrefix);
   return p.origins.includes(o);
 }
 

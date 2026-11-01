@@ -45,6 +45,7 @@
       "name": "Yooba Land",
       "$comment": "An MMO (J, 2026-10-26: everyone in the same lobby; always on our servers): one room per area for everyone ('p1/lobby', 'p1/level-1' on yoobalandgame.com; 't-p1/...' on beta, 't-<id>/p1/...' in playtests; '.2', '.3'... past 250: avatars are compared per pair until the grid index is built, docs/net.md), on the relay only. Avatars ride the pose channel: every send within 60 m, 5 a second to 240 m, once a second past that.",
       "origins": ["https://yoobalandgame.com", "https://www.yoobalandgame.com", "https://yoobaland.hawkesgen.ai", "https://sb-yoobaland.hawkesgen.ai"],
+      "testOrigins": ["https://sites.hawkesgen.ai"],
       "transports": ["relay"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 250, "p2pMax": 1, "interest": { "tiers": [[45, 0, 0], [130, 250, 0], [320, 1000, 250], [null, 3000, 1000]], "farAvatarM": 60 } },
       "limits": { "rooms": 100, "playersPerRoom": 250, "players": 10000 }
