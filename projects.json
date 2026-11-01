@@ -38,6 +38,7 @@
       "name": "Sick Of It",
       "$comment": "The ghost lobby: everyone playing is in one room ('lobby' on sickofitgame.com, 't-lobby' on beta and in playtests; 'lobby-2'... when full). Poses only: the floor rides in z (level x 1000), so other floors are far and come rarely.",
       "origins": ["https://sickofitgame.com", "https://www.sickofitgame.com", "https://sickofit.hawkesgen.ai", "https://sb-sickofit.hawkesgen.ai"],
+      "testOrigins": ["https://sites.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 1000, "p2pMax": 4 },
       "limits": { "rooms": 50, "playersPerRoom": 1000, "players": 10000 }
     },
