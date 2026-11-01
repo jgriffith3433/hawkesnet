@@ -569,3 +569,11 @@ test("records: a game's public store (a leaderboard's signed results): its sites
   const r = await fetch(`${endpoint}/v1/net/records?project=doseofdestruction&tag=hawkes-dod/results/global`);
   assert.equal(r.headers.get('access-control-allow-origin'), '*', 'any page reads');
 });
+
+test('an option given as undefined keeps its default: endpoint: undefined goes to the page-named Net', async () => {
+  (globalThis as any).HAWKES_NET_ENDPOINT = endpoint;
+  try {
+    const a = await join('undef1', opts({ name: 'Ada', transport: 'relay', endpoint: undefined, role: undefined }));
+    try { assert.equal(a.transport, 'relay'); } finally { await a.leave(); }
+  } finally { delete (globalThis as any).HAWKES_NET_ENDPOINT; }
+});
