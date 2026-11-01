@@ -51,9 +51,21 @@ dashboard page there sends visitors to its new name. Caddy serves both (`deploy/
 
 ```bash
 npm install && npm run typecheck && npm test
+npm run build                # the release files into dist/ (tools/build.mjs): SDK, packed @hawkesgen/net, Unity copy
 npm run dev                  # the service on this PC (tools/net-dev.mjs), scratch data
 node tools/net-load.mjs      # the load test (--url tests a real service from outside)
 ```
 
 `test/helper.ts` starts the whole service in a test process; other repos use it too (Dose Of Destruction's
 `tools/online-live.test.ts` imports it from a hawkesnet checkout).
+
+## How Hawkes Studio builds it (2026-11-01)
+
+Studio project `hawkes-net` (kind app, Jaycee's Studio cell `j-studio-4f12`). On each push to `beta` Studio's hook
+(`.github/workflows/hawkes-studio.yml`) starts its `release` build: `npm ci && npm run typecheck && npm test && npm run
+build` in Studio's cloud job, and publishes `dist/` on the project's Studio beta site. The service itself is never built:
+the boxes run `src/` and deploy their own branch. `.github/workflows/ci.yml` runs the same checks on every pull request
+and push, plus the Unity package's managed client (`hawkesnet-unity` beta, `DevTools/ManagedTest`) against this
+commit's service; the beta auto-merge waits for it. The Unity package is its own Studio project, `hawkes-net-unity`.
+Releasing the JS SDK to hawkesnet-js is `ops-release-js.yml` (main only, needs `HAWKESNET_JS_TOKEN`). Keep
+`package.json`, `sdk/js/package.json` and the core's `VERSION` the same: the build fails when they differ.

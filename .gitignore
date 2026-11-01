@@ -8,3 +8,6 @@ node_modules/
 *.pem
 *.key
 *_ed25519
+
+# npm run build (tools/build.mjs)
+dist/

@@ -1,6 +1,6 @@
 {
   "name": "hawkesnet",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Hawkes Net: multiplayer for web, Babylon and Unity WebGL games (net.hawkesgen.ai). The service, its relay and the SDK.",
   "type": "module",
@@ -12,6 +12,7 @@
     "dev": "node tools/net-dev.mjs",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.ts\"",
     "typecheck": "tsc -p .",
+    "build": "node tools/build.mjs",
     "load": "node tools/net-load.mjs"
   },
   "devDependencies": {

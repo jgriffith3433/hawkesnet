@@ -1,0 +1,84 @@
+# Checks every pull request and every push to dev, beta and main (what Hawkes Studio's checks run, plus the Unity
+# client): the typecheck, the tests (service, relay, SDK, the Unity WebGL bridge), the release build, and the Unity
+# package's managed client (hawkesnet-unity, public) end to end against this commit's service.
+# The beta auto-merge waits for these before merging a pull request into beta. No secrets.
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, beta, main]
+  push:
+    branches: [dev, beta, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/
+          retention-days: 7
+
+  unity-managed:
+    name: Unity managed client
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jgriffith3433/hawkesnet-unity
+          ref: beta
+          path: hawkesnet-unity
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Start the service
+        run: |
+          node tools/net-dev.mjs 8786 > net-dev.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8786/v1/net/status > /dev/null && break; sleep 1; done
+          cat net-dev.log
+      - name: Run the managed client test
+        working-directory: hawkesnet-unity
+        run: |
+          # The test's project file is not in the repo (*.csproj is ignored there): the client and the test, plain .NET.
+          cat > DevTools/ManagedTest/ManagedTest.csproj <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+              <Nullable>disable</Nullable>
+              <ImplicitUsings>disable</ImplicitUsings>
+              <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+            </PropertyGroup>
+            <ItemGroup>
+              <Compile Include="../../Packages/com.hawkes.net/Runtime/HawkesNetClient.cs" />
+            </ItemGroup>
+          </Project>
+          EOF
+          dotnet run --project DevTools/ManagedTest -- http://127.0.0.1:8786
+      - if: failure()
+        run: cat net-dev.log
