@@ -70,7 +70,33 @@
   const cv = $('c'), g = cv.getContext('2d');
   cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = ((e.clientX - r.left) / r.width) * W; pos.y = ((e.clientY - r.top) / r.height) * H; });
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
-  const net = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
+  // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
+  // On p2p the smoke also moves the room to the relay and checks again. Nothing runs unless a playtest starts.
+  let net = null;
+  const { installNetPlaytest } = await import('/demo-playtest.mjs');
+  const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
+  installNetPlaytest({
+    product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
+    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
+    drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
+    myPos: () => [pos.x, 0, pos.y],
+    shownPos: (id) => tracks.get(id)?.sample() ?? null,
+    botPose: (u) => [200 + 500 * u, 0, 450],
+    tolerance: 8,
+    extra: async ({ check, main, bot, until, metric, roundTrips }) => {
+      metric('p2p', main.transport === 'p2p' ? 1 : 0);
+      if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));
+      await check('The room moves from peer to peer to the relay and still works', async () => {
+        main.migrate('playtest');
+        const ms = await until(() => main.transport === 'relay' && bot.transport === 'relay' && main.peers.has(bot.id), 15000, () => `both players on the relay (now ${main.transport} / ${bot.transport})`);
+        metric('migrateMs', Math.round(ms));
+        const rtt = await roundTrips(main, 'main', bot.id);
+        metric('relayRttMs', rtt);
+        return `moved in ${Math.round(ms)} ms, round trip ${rtt} ms`;
+      });
+    },
+  });
+  net = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
   window.hawkesNetDemo = net;
   log(`joined as ${net.id} (${net.transport})`);
   net.when('transport', (e) => log(`room moved: ${e.from} -> ${e.to} (${e.why})`));

@@ -69,3 +69,12 @@ and push, plus the Unity package's managed client (`hawkesnet-unity` beta, `DevT
 commit's service; the beta auto-merge waits for it. The Unity package is its own Studio project, `hawkes-net-unity`.
 Releasing the JS SDK to hawkesnet-js is `ops-release-js.yml` (main only, needs `HAWKESNET_JS_TOKEN`). Keep
 `package.json`, `sdk/js/package.json` and the core's `VERSION` the same: the build fails when they differ.
+
+## Studio's playtest of the demo
+
+`/demo` (public/demo.html) carries Hawkes Studio's playtest bot, `public/demo-playtest.mjs` (served at
+`/demo-playtest.mjs`, `window.hawkesPlaytest`). `smoke` opens a second player in the same page and checks the room,
+poses both ways (the dot moved by real arrow keys), messages both ways, a move from peer to peer to the relay, and leaving;
+`two-players` is for Studio's peers playtest (real browsers on one `?room=`). Studio plays beta's `/demo` (project
+hawkes-net), so a pass means the beta service works end to end. The same file is `example/net-playtest.mjs` in
+hawkesnet-js and hawkesnet-babylon: change all three.
