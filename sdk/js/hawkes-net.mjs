@@ -153,7 +153,9 @@ class Room {
     this.room = room;
     this.project = o.project || '';
     // The relay by default: peer to peer ('auto') only where the game asks and its project allows it.
-    this.o = { transport: 'relay', endpoint: defaultEndpoint(), leaveOnHide: true, role: 'player', ...o };
+    // An option given as undefined keeps its default (endpoint: undefined would otherwise send tickets to 'undefined/...').
+    const given = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+    this.o = { transport: 'relay', endpoint: defaultEndpoint(), leaveOnHide: true, role: 'player', ...given };
     this.ev = new Emitter();
     this.msgs = new Emitter();
     this.id = null; this.ord = 0; this.host = null; this.status = 'connecting'; this.transport = 'p2p'; this.config = null; this.name = null; this.color = null;
