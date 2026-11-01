@@ -108,6 +108,8 @@ export async function startHub(o: HubOptions = {}) {
   const node = await svc.startNode();
   projects.startSampler(); // players online a minute, per project (the dashboard's line)
   const demo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo.html');
+  // Hawkes Studio's playtest bot for the demo (window.hawkesPlaytest: two players meet, move, message, leave).
+  const demoPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-playtest.mjs');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
   // What this process runs: the repo and its commit (from .git, read once), so a deploy can be seen from outside.
   const build = (() => {
@@ -135,6 +137,10 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/demo') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(demo));
+    }
+    if (route === '/demo-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(demoPlaytest));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json' });

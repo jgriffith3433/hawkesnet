@@ -129,7 +129,13 @@ test('the front door is the dashboard; the demo page and the SDK are served by t
   assert.match(html, /\/v1\/net\/me/, 'it reads your Net from the portal');
   const page = await fetch(`${hubUrl}/demo`);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /hawkes-net/i);
+  const demoHtml = await page.text();
+  assert.match(demoHtml, /hawkes-net/i);
+  assert.match(demoHtml, /installNetPlaytest/, "the demo carries Studio's playtest bot");
+  const bot = await fetch(`${hubUrl}/demo-playtest.mjs`);
+  assert.equal(bot.status, 200, "the playtest bot the demo imports");
+  assert.match(bot.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await bot.text(), /export function installNetPlaytest/);
   const sdk = await fetch(`${hubUrl}/sdk/hawkes-net@1.mjs`);
   assert.equal(sdk.status, 200);
   assert.equal(sdk.headers.get('access-control-allow-origin'), '*');
