@@ -60,3 +60,11 @@ test("the portal's beta key (ustg_*) may make tickets in the portal's project", 
   assert.ok(p.projects.hawkesgenwebsite.keyProjects.includes('ustg_*'));
   assert.ok(p.projects.hawkesgenwebsite.keyProjects.includes('usr_*'));
 });
+
+test("Studio's beta sites (sites.hawkesgen.ai) get test rooms for Hawkes's own Net games, never live ones", () => {
+  const p = JSON.parse(fs.readFileSync(new URL('../projects.json', import.meta.url), 'utf8')).projects;
+  for (const id of ['netdemo', 'doseofdestruction', 'sickofit', 'yoobaland']) {
+    assert.ok(p[id].testOrigins.includes('https://sites.hawkesgen.ai'), id);
+    assert.ok(!p[id].origins.includes('https://sites.hawkesgen.ai'), id + ': a shared host is never a live origin');
+  }
+});

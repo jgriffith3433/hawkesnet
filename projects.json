@@ -23,6 +23,7 @@
       "$comment": "The demo shows a room moving from peer to peer to the relay, so it keeps peer to peer on.",
       "transports": ["p2p", "relay"],
       "origins": ["https://hawkesgames.com", "https://www.hawkesgames.com", "https://beta.hawkesgames.com", "https://net.hawkesgames.com", "https://net-beta.hawkesgames.com", "https://net.hawkesgen.ai", "https://hawkesnet.hawkesgen.ai", "https://hawkesgen.ai", "https://www.hawkesgen.ai", "https://beta.hawkesgen.ai"],
+      "testOrigins": ["https://sites.hawkesgen.ai"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 64, "p2pMax": 8 },
       "limits": { "rooms": 500, "players": 5000 }
     },
@@ -30,6 +31,7 @@
       "name": "Dose Of Destruction",
       "$comment": "A fighting game (docs/net.md 'Express'; DoD docs/online.md): one shared lobby room on the relay ('lobby' on doseofdestruction.com, 't-lobby' on beta and localhost) for presence and the queue, and a pair room per match ('m/<hash>', topology pair) that starts peer to peer (a direct link between the two browsers: the lowest latency) and moves to the relay when they can't link. Inputs go as express frames (rollback netcode). The leaderboard's signed results are records.",
       "origins": ["https://doseofdestruction.com", "https://www.doseofdestruction.com", "https://dod.hawkesgen.ai", "https://sb-dod.hawkesgen.ai"],
+      "testOrigins": ["https://sites.hawkesgen.ai"],
       "transports": ["p2p", "relay"],
       "defaults": { "topology": "star", "profile": "light", "maxPlayers": 1000, "p2pMax": 2 },
       "limits": { "rooms": 5000, "playersPerRoom": 1000, "players": 10000, "msgsPerSec": 120, "expressPerSec": 300 }

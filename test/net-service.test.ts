@@ -238,7 +238,8 @@ test("the portal's rooms have no keyless door, and localhost is a door only wher
     // Studio's preview host is shared by every customer's builds: Yooba Land's cell copy may play its test rooms only.
     assert.equal(originAllowed(netProject('yoobaland'), 'https://sites.hawkesgen.ai', 't-p1/level-1'), true, 'the preview host, test rooms');
     assert.equal(originAllowed(netProject('yoobaland'), 'https://sites.hawkesgen.ai', 'p1/level-1'), false, 'never the live rooms');
-    assert.equal(originAllowed(netProject('netdemo'), 'https://sites.hawkesgen.ai', 't-lobby'), false, 'only for the project that lists it');
+    assert.equal(originAllowed(netProject('hawkesgenwebsite'), 'https://sites.hawkesgen.ai', 't-lobby'), false, 'only for the project that lists it');
+    assert.equal(originAllowed(netProject('netdemo'), 'https://sites.hawkesgen.ai', 'lobby'), false, "the demo's beta pages: never its live rooms");
     assert.equal(originAllowed(netProject('yoobaland'), 'https://yoobalandgame.com', 'p1/lobby'), true, 'its own site, live rooms');
   }
   finally { process.env.NET_TRUST_LOCALHOST = '1'; }
