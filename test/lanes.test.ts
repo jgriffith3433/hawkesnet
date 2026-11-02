@@ -9,7 +9,7 @@ import { lane, laneBranch, envFor, caddyfileFor, envProblem, envGenMoved } from 
 test('beta and live never share a Gen, a branch, an address or a node id', () => {
   const live = lane('live'), beta = lane('beta');
   assert.equal(beta.gen, 'https://gen-beta-388576319982.us-central1.run.app', 'Gen beta direct, not through the Worker');
-  assert.equal(live.gen, 'https://hawkesgen.ai');
+  assert.equal(live.gen, 'https://gen-f6ruen5wfa-uk.a.run.app', 'live Gen direct, not through the gen-edge Worker');
   assert.equal(beta.host, 'hawkesnet.hawkesgen.ai');
   assert.equal(live.host, 'net.hawkesgen.ai');
   for (const k of ['gen', 'branch', 'host', 'nodeId', 'stateFile', 'ownerKey']) assert.notEqual(beta[k], live[k], k);
@@ -33,7 +33,7 @@ test("the beta box's settings: gen-beta, its own address and node, one worker, f
   assert.equal(envProblem(text, lane('beta')), null);
   assert.match(String(envProblem(text, lane('live'))), /gen-beta/, 'a beta box is never taken for live');
   const live = envFor(lane('live'), 'hg_test', 2);
-  assert.match(live, /^NET_GEN_URL=https:\/\/hawkesgen\.ai$/m);
+  assert.match(live, /^NET_GEN_URL=https:\/\/gen-f6ruen5wfa-uk\.a\.run\.app$/m);
   assert.match(live, /^NET_WORKERS=2$/m);
   assert.equal(laneBranch(live), 'main');
   // The live box's file from before lanes (no branch line) is still live.
@@ -46,8 +46,10 @@ test("the beta box's settings: gen-beta, its own address and node, one worker, f
   // The beta box set up with beta.hawkesgen.ai (the Worker) is moved to Gen beta's own address.
   assert.equal(envProblem('NET_GEN_URL=https://beta.hawkesgen.ai\nNET_DEPLOY_BRANCH=beta\n', lane('beta')), null);
   assert.equal(envGenMoved('NET_GEN_URL=https://beta.hawkesgen.ai\n', lane('beta')), 'NET_GEN_URL=https://gen-beta-388576319982.us-central1.run.app\n');
-  assert.equal(envGenMoved('A=1\nNET_GEN_URL=https://gen.hawkesgen.ai\n', lane('live')), 'A=1\nNET_GEN_URL=https://hawkesgen.ai\n');
-  assert.equal(envGenMoved('NET_GEN_URL=https://hawkesgen.ai\n', lane('live')), null);
+  assert.equal(envGenMoved('A=1\nNET_GEN_URL=https://gen.hawkesgen.ai\n', lane('live')), 'A=1\nNET_GEN_URL=https://gen-f6ruen5wfa-uk.a.run.app\n');
+  // The live box set up with hawkesgen.ai (the gen-edge Worker) is moved to live Gen's own address.
+  assert.equal(envGenMoved('NET_GEN_URL=https://hawkesgen.ai\n', lane('live')), 'NET_GEN_URL=https://gen-f6ruen5wfa-uk.a.run.app\n');
+  assert.equal(envGenMoved('NET_GEN_URL=https://gen-f6ruen5wfa-uk.a.run.app\n', lane('live')), null);
 });
 
 test("Caddy serves the lane's own name", () => {

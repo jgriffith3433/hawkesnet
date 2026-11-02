@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { laneBranch } from './lane.mjs';
+import { laneBranch, lane, envGenMoved } from './lane.mjs';
 
 const DIR = '/srv/hawkes/hawkesnet';
 const STATE = '/srv/hawkes/net-data/pull.json';
@@ -18,7 +18,9 @@ const git = (...a) => execFileSync('sudo', ['-u', 'hawkes', '-H', 'git', '-C', D
 const state = (() => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return {}; } })();
 const save = () => { if (!DRY) fs.writeFileSync(STATE, JSON.stringify(state, null, 2)); };
 const NET = /^(src\/|sdk\/js\/|public\/|projects\.json|deploy\/)/;
-const BRANCH = laneBranch((() => { try { return fs.readFileSync('/etc/hawkes/net.env', 'utf8'); } catch { return ''; } })());
+const ENV_FILE = '/etc/hawkes/net.env';
+const ENV_TEXT = (() => { try { return fs.readFileSync(ENV_FILE, 'utf8'); } catch { return ''; } })();
+const BRANCH = laneBranch(ENV_TEXT);
 
 const healthy = async () => {
   for (let i = 0; i < 20; i++) {
@@ -52,6 +54,27 @@ function testedHere(sha) {
   } finally { cleanup(); }
   save();
   return state.tested.ok;
+}
+
+// The lane's Gen moved (an old name, or the public name behind Cloudflare: J, 2026-11-02, "our own services must never call
+// each other through Cloudflare"): the box rewrites NET_GEN_URL itself, restarts and checks health, and puts the old line
+// back if the service doesn't come up. lane.mjs is read fresh each run, so the run after a deploy that moves it does this.
+{
+  const moved = envGenMoved(ENV_TEXT, lane(BRANCH === 'beta' ? 'beta' : 'live'));
+  const to = moved && /^NET_GEN_URL=(.*)$/m.exec(moved)?.[1];
+  if (moved && !DRY && state.genMoveFailed !== to) {
+    const from = /^NET_GEN_URL=(.*)$/m.exec(ENV_TEXT)?.[1];
+    fs.writeFileSync(ENV_FILE, moved);
+    execFileSync('systemctl', ['restart', 'hawkes-net']);
+    if (await healthy()) say(`NET_GEN_URL ${from} -> ${to}`);
+    else {
+      say(`NET_GEN_URL ${to}: unhealthy after restart, back to ${from} (not tried again for this address)`);
+      fs.writeFileSync(ENV_FILE, ENV_TEXT);
+      execFileSync('systemctl', ['restart', 'hawkes-net']);
+      state.genMoveFailed = to;
+      save();
+    }
+  } else if (moved) say('would move NET_GEN_URL to the lane\'s Gen');
 }
 
 git('fetch', '--quiet', 'origin', BRANCH);
