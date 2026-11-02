@@ -27,11 +27,12 @@ dashboard page there sends visitors to its new name. Caddy serves both (`deploy/
   | Address | https://hawkesnet.hawkesgen.ai | https://net.hawkesgen.ai |
   | Box | VM `hawkes-net-beta` (hawkes-prod, us-east1-b, e2-micro, free tier), made by `deploy/provision-gce.mjs` | VM `hawkes-net` (hawkes-prod, us-east4-c, e2-small, 34.86.89.28) |
   | Follows (`NET_DEPLOY_BRANCH` in its net.env) | `beta` | `main` (also when the line is missing) |
-  | Checks API keys with (`NET_GEN_URL`, `/v1/net/whoami`) | Gen beta direct (gen-beta-388576319982.us-central1.run.app, not the beta.hawkesgen.ai Worker), its own "hawkesnet" key there | hawkesgen.ai |
+  | Checks API keys with (`NET_GEN_URL`, `/v1/net/whoami`) | Gen beta direct (gen-beta-388576319982.us-central1.run.app, not the beta.hawkesgen.ai Worker), its own "hawkesnet" key there | live Gen direct (gen-f6ruen5wfa-uk.a.run.app, not the hawkesgen.ai Worker) |
   | Data, SSH key, state | its own disk; `net_beta_ed25519`, `net-beta.json` | `net_ed25519`, `net.json` |
 
   Set up either with `node deploy/setup.mjs [--lane beta]` (it refuses a box whose settings name the other lane's Gen or
-  branch). The portal's beta (beta.hawkesgames.com, keys `ustg_*`) plays on beta Net; the beta dashboard signs in there.
+  branch). A box whose NET_GEN_URL is one of its lane's `oldGen` names moves itself to `gen` (`deploy/pull.mjs`, on its
+  next run after the deploy: rewrite, restart, health check, the old line back if unhealthy). The portal's beta (beta.hawkesgames.com, keys `ustg_*`) plays on beta Net; the beta dashboard signs in there.
   Games' beta sites reach beta Net through `window.HAWKES_NET_ENDPOINT`.
 - **No runtime dependencies.** Node 24 runs the TypeScript directly (type stripping): erasable syntax only (no enums, no
   namespaces, no parameter properties), imports end in `.ts`.

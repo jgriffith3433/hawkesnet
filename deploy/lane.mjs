@@ -6,9 +6,11 @@ export const LANES = {
   live: {
     // dashboard: the developer dashboard's own name, under the portal's domain (hawkesgames.com) because the page reads the
     // portal with its session cookie; the relay, tickets and the SDKs stay on `host` (docs/net.md, "The dashboard").
-    host: 'net.hawkesgen.ai', dashboard: 'net.hawkesgames.com', branch: 'main', gen: 'https://hawkesgen.ai', ownerKey: 'genKey',
-    // Gen's old names (J, 2026-10-29: going away): a box still set to one is the same Gen; setup.mjs moves it to `gen`.
-    oldGen: ['https://gen.hawkesgen.ai'],
+    host: 'net.hawkesgen.ai', dashboard: 'net.hawkesgames.com', branch: 'main', gen: 'https://gen-f6ruen5wfa-uk.a.run.app', ownerKey: 'genKey',
+    // gen: live Gen's own Cloud Run address (hawkesgen server/gen-edge GEN_ORIGIN), not hawkesgen.ai: that name is the
+    // gen-edge Cloudflare Worker, and the box's key checks and usage reports have no reason to go through it.
+    // oldGen: names a box may still have (the same Gen); setup.mjs and pull.mjs move them to `gen`.
+    oldGen: ['https://hawkesgen.ai', 'https://gen.hawkesgen.ai'],
     nodeId: 'net-1', stateFile: 'net.json', keyName: 'hawkes-net box',
   },
   beta: {
