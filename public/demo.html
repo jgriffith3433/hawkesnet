@@ -99,7 +99,7 @@
   net = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
   window.hawkesNetDemo = net;
   log(`joined as ${net.id} (${net.transport})`);
-  net.when('transport', (e) => log(`room moved: ${e.from} -> ${e.to} (${e.why})`));
+  net.when('transport', (e) => log(`room moved: ${e.from} -> ${e.to} (${e.why}${e.why === 'links failed' && net.linkFailure ? `: ${net.linkFailure}` : ''})`));
   net.when('peer:join', (p) => log(`${p.name || p.id} joined`));
   net.when('peer:leave', (e) => log(`${e.peer.name || e.peer.id} left (${e.reason})`));
   net.when('host', (e) => log(`host is now ${e.host}`));
@@ -155,7 +155,7 @@
       const li = document.createElement('li');
       li.innerHTML = `<span class="dot" style="background:${p.color || '#888'}"></span><span style="flex:1"></span><span class="pill"></span>`;
       li.children[1].textContent = p.name || p.id;
-      li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? 'linked' : p.route;
+      li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? (p.route === 'direct' ? 'linked' : 'signal') : p.route; // 'linked' only once the WebRTC channel is open
       $('peers').appendChild(li);
     }
   }, 500);

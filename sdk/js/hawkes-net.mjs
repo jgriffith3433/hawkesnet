@@ -823,7 +823,15 @@ class Room {
       return;
     }
     // A player with no link to the host after a while: the room should move to the relay (the node decides).
-    if (p.carrier !== 'channel' && !p.proposed && t - p.since > LINK_WAIT_MS) { p.proposed = true; this.migrate('links failed'); }
+    if (p.carrier !== 'channel' && !p.proposed && t - p.since > LINK_WAIT_MS) { p.proposed = true; this._linkFailedWhy(p, t); this.migrate('links failed'); }
+  }
+  /** Says why the link to the host never opened (no WebRTC, switched off, or the ICE/data channel state), keeps it in `linkFailure` and warns in the console. */
+  _linkFailedWhy(p, t) {
+    const pc = p.pc;
+    const why = !pc ? (this.o.direct === false ? 'direct links are switched off' : 'no WebRTC in this browser')
+      : `no data channel after ${Math.round((t - p.since) / 1000)} s (ice ${pc.iceConnectionState}, connection ${pc.connectionState}, channel ${p.channel?.readyState || 'none'})`;
+    console.warn('[hawkes-net] link to the host failed:', why);
+    this.linkFailure = why;
   }
   _teardownP2p() {
     const p = this.p2p;
