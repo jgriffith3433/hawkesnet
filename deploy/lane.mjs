@@ -12,8 +12,10 @@ export const LANES = {
     nodeId: 'net-1', stateFile: 'net.json', keyName: 'hawkes-net box',
   },
   beta: {
-    host: 'hawkesnet.hawkesgen.ai', dashboard: 'net-beta.hawkesgames.com', branch: 'beta', gen: 'https://beta.hawkesgen.ai', ownerKey: 'genBetaKey',
-    oldGen: ['https://gen-beta.hawkesgen.ai'],
+    // gen: Gen beta's own Cloud Run address, not beta.hawkesgen.ai: that name is a Cloudflare Worker (hawkesgen
+    // server/gen-edge), and the box's server-to-server calls (key checks, usage) have no reason to go through it.
+    host: 'hawkesnet.hawkesgen.ai', dashboard: 'net-beta.hawkesgames.com', branch: 'beta', gen: 'https://gen-beta-388576319982.us-central1.run.app', ownerKey: 'genBetaKey',
+    oldGen: ['https://gen-beta.hawkesgen.ai', 'https://beta.hawkesgen.ai'],
     nodeId: 'net-beta-1', stateFile: 'net-beta.json', keyName: 'hawkes-net beta box',
     // An e2-micro (1 GB): one relay worker keeps the box well inside its memory; beta's players are playtests.
     workers: 1, capacity: 500,
