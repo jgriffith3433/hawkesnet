@@ -5,8 +5,8 @@
 //   node tools/release-js.mjs            copy, commit and tag the version in sdk/js/package.json; push with --push
 //   node tools/release-js.mjs --push     ...and push main and the tag
 //
-// Needs a checkout of hawkesnet-js next to this repo (C:\Projects\hawkesnet-js). Git signs in with the token in git's
-// credential store, never a prompt.
+// Needs a checkout of hawkesnet-js next to this repo. --push uses whatever git access the machine already has (a Claude
+// session with both repos needs no token); ops-release-js only checks a release, it keeps no token for hawkesnet-js.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
