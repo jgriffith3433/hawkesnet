@@ -27,7 +27,7 @@ dashboard page there sends visitors to its new name. Caddy serves both (`deploy/
   | Address | https://hawkesnet.hawkesgen.ai | https://net.hawkesgen.ai |
   | Box | VM `hawkes-net-beta` (hawkes-prod, us-east1-b, e2-micro, free tier), made by `deploy/provision-gce.mjs` | VM `hawkes-net` (hawkes-prod, us-east4-c, e2-small, 34.86.89.28) |
   | Follows (`NET_DEPLOY_BRANCH` in its net.env) | `beta` | `main` (also when the line is missing) |
-  | Checks API keys with (`NET_GEN_URL`, `/v1/net/whoami`) | beta.hawkesgen.ai, its own "hawkesnet" key there | hawkesgen.ai |
+  | Checks API keys with (`NET_GEN_URL`, `/v1/net/whoami`) | Gen beta direct (gen-beta-388576319982.us-central1.run.app, not the beta.hawkesgen.ai Worker), its own "hawkesnet" key there | hawkesgen.ai |
   | Data, SSH key, state | its own disk; `net_beta_ed25519`, `net-beta.json` | `net_ed25519`, `net.json` |
 
   Set up either with `node deploy/setup.mjs [--lane beta]` (it refuses a box whose settings name the other lane's Gen or
