@@ -86,6 +86,12 @@
     extra: async ({ check, main, bot, until, metric, roundTrips }) => {
       metric('p2p', main.transport === 'p2p' ? 1 : 0);
       if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));
+      await check('The peer to peer link opened and the room stayed peer to peer', async () => {
+        const ms = await until(() => main.transport !== 'p2p' || main.peers.get(bot.id)?.route === 'direct' || bot.peers.get(main.id)?.route === 'direct', 7000, () => `the WebRTC data channel to open (routes ${main.peers.get(bot.id)?.route}/${bot.peers.get(main.id)?.route}${main.linkFailure || bot.linkFailure ? `, ${main.linkFailure || bot.linkFailure}` : ''})`);
+        if (main.transport !== 'p2p') throw new Error(`the room fell to ${main.transport} before a link opened: ${main.linkFailure || bot.linkFailure || 'no reason given'}`);
+        metric('linkMs', Math.round(ms));
+        return `direct link after ${Math.round(ms)} ms`;
+      });
       await check('The room moves from peer to peer to the relay and still works', async () => {
         main.migrate('playtest');
         const ms = await until(() => main.transport === 'relay' && bot.transport === 'relay' && main.peers.has(bot.id), 15000, () => `both players on the relay (now ${main.transport} / ${bot.transport})`);

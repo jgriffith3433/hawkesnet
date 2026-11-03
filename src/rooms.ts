@@ -23,6 +23,7 @@ const RESUME_S = 600; // a resume token lives 10 minutes (the grace is 15 s; a p
 const SEED_WAIT_MS = 3000;
 const SIG_PER_SEC = 60;
 const SIG_BYTES_PER_SEC = 24 * 1024;
+const SIG_DATA_BYTES_PER_SEC = 48 * 1024; // the slow carrier: 4 bundles a second of up to 6 KB, base64
 
 export type Payload = {
   v: 1; kid: string; prj: string; room: string; peer: string; ord: number; sub: string; nm: string | null; role: string;
@@ -33,7 +34,7 @@ export type Payload = {
 type Peer = {
   id: string; ord: number; name: string | null; role: string; sub: string; color: string;
   ws: Socket | null; v: 2 | 3; conn: any | null; away: ReturnType<typeof setTimeout> | null;
-  sig: { at: number; n: number; bytes: number }; linksFailed: number; bytesIn: number; bytesOut: number; joined: number;
+  sig: { at: number; n: number; bytes: number; dBytes: number }; linksFailed: number; bytesIn: number; bytesOut: number; joined: number;
 };
 export type Room = {
   key: string; project: string; name: string; mode: 'p2p' | 'relay'; want: 'auto' | 'p2p' | 'relay'; allowRelay: boolean;
@@ -130,7 +131,7 @@ export class Rooms {
     }
     const peer: Peer = {
       id: t.peer, ord: t.ord, name: t.nm ? String(t.nm).slice(0, 40) : `Player ${t.ord}`, role: t.role, sub: t.sub,
-      color: COLORS[(t.ord - 1) % COLORS.length], ws: null, v, conn: null, away: null, sig: { at: 0, n: 0, bytes: 0 }, linksFailed: 0, bytesIn: 0, bytesOut: 0, joined: now,
+      color: COLORS[(t.ord - 1) % COLORS.length], ws: null, v, conn: null, away: null, sig: { at: 0, n: 0, bytes: 0, dBytes: 0 }, linksFailed: 0, bytesIn: 0, bytesOut: 0, joined: now,
     };
     room.peers.set(peer.id, peer);
     this.stats.joins++;
@@ -216,8 +217,11 @@ export class Rooms {
     let m: any = null;
     if (typeof data === 'string') { try { m = JSON.parse(data); } catch { return; } }
     else { const p = core.peek(data); if (p.kind === 'control' || p.kind === 'hello') m = p.value; else return; }
-    if (now - peer.sig.at > 1000) { peer.sig.at = now; peer.sig.n = 0; peer.sig.bytes = 0; }
-    if (++peer.sig.n > SIG_PER_SEC || (peer.sig.bytes += size) > SIG_BYTES_PER_SEC) return;
+    if (now - peer.sig.at > 1000) { peer.sig.at = now; peer.sig.n = 0; peer.sig.bytes = 0; peer.sig.dBytes = 0; }
+    // The slow data carrier has its own byte budget: it must never crowd out offers, answers and ICE (a dropped answer
+    // leaves the player's WebRTC link at ice 'new' until the room gives up on peer to peer).
+    if (m && m.c === 'sig' && m.kind === 'data') { if ((peer.sig.dBytes += size) > SIG_DATA_BYTES_PER_SEC) return; }
+    else if (++peer.sig.n > SIG_PER_SEC || (peer.sig.bytes += size) > SIG_BYTES_PER_SEC) return;
     if (m && typeof m === 'object') this.controlIn(room, peer, m, now);
   }
 
