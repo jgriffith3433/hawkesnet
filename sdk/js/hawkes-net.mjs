@@ -30,6 +30,8 @@ const DEFAULT_ICE = [{ urls: ['stun:stun.cloudflare.com:3478'] }, { urls: ['stun
 const PING_MS = 5000;
 const SEND_MS = 33;
 const LINK_WAIT_MS = 8000;
+const OFFER_RETRY_MS = 2000; // a link offer with no answer is sent again after this long
+const OFFER_TRIES = 3;
 const SLEEP_GRACE_MS = 15_000;
 /** After a move to the relay, how long a player missing from the new list has to arrive before they count as gone. */
 const MOVE_GRACE_MS = 5000;
@@ -822,6 +824,8 @@ class Room {
       }
       return;
     }
+    // An offer with no answer yet (dropped on the signal route, or the host not ready for it): say it again, with the ICE seen so far.
+    if (p.pc && p.offer && !p.answered && p.carrier !== 'channel' && p.offers < OFFER_TRIES && t - p.offerAt > OFFER_RETRY_MS) this._sendOffer(p, t);
     // A player with no link to the host after a while: the room should move to the relay (the node decides).
     if (p.carrier !== 'channel' && !p.proposed && t - p.since > LINK_WAIT_MS) { p.proposed = true; this._linkFailedWhy(p, t); this.migrate('links failed'); }
   }
@@ -875,14 +879,20 @@ class Room {
       this._route(p.host, 'signal');
     };
     ch.onmessage = (e) => this._fromHost(new Uint8Array(e.data), 'channel');
-    pc.onicecandidate = (e) => { if (e.candidate) this._sendIce(p.host, e.candidate); };
+    pc.onicecandidate = (e) => { if (e.candidate) { (p.sentIce || (p.sentIce = [])).push(e.candidate); this._sendIce(p.host, e.candidate); } };
     void (async () => {
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        this._control({ c: 'sig', to: p.host, kind: 'offer', body: JSON.stringify(pc.localDescription) });
+        p.offer = JSON.stringify(pc.localDescription); p.offers = 0; p.sentIce = p.sentIce || [];
+        this._sendOffer(p, wall());
       } catch (e) { console.warn('[hawkes-net] link offer failed:', e?.message || e); }
     })();
+  }
+  _sendOffer(p, t) {
+    p.offers++; p.offerAt = t;
+    this._control({ c: 'sig', to: p.host, kind: 'offer', body: p.offer });
+    if (p.offers > 1) { for (const c of p.sentIce || []) this._sendIce(p.host, c); }
   }
   _sendIce(to, c) {
     const j = typeof c.toJSON === 'function' ? c.toJSON() : c;
@@ -919,6 +929,9 @@ class Room {
       const PC = this._rtc();
       if (!PC) return;
       if (m.kind === 'offer') {
+        // The player says its offer again when it heard no answer: the same offer gets the same answer again.
+        if (link.pc && link.offerBody === m.body) { if (link.answer) this._control({ c: 'sig', to: link.id, kind: 'answer', body: link.answer }); return; }
+        link.offerBody = m.body; link.answer = null;
         try { link.pc?.close(); } catch {}
         const pc = new PC({ iceServers: this.ice });
         link.pc = pc;
@@ -945,7 +958,8 @@ class Room {
           await pc.setRemoteDescription(JSON.parse(m.body));
           const ans = await pc.createAnswer();
           await pc.setLocalDescription(ans);
-          this._control({ c: 'sig', to: link.id, kind: 'answer', body: JSON.stringify(pc.localDescription) });
+          link.answer = JSON.stringify(pc.localDescription);
+          this._control({ c: 'sig', to: link.id, kind: 'answer', body: link.answer });
           for (const c of link.iceWait || []) await pc.addIceCandidate(c).catch(() => {});
           link.iceWait = null;
         } catch (e) { console.warn('[hawkes-net] link answer failed:', e?.message || e); }
@@ -962,7 +976,8 @@ class Room {
     const pc = p.pc;
     if (!pc) return;
     if (m.kind === 'answer') {
-      try { await pc.setRemoteDescription(JSON.parse(m.body)); for (const c of p.iceWait || []) await pc.addIceCandidate(c).catch(() => {}); p.iceWait = null; } catch (e) { console.warn('[hawkes-net] link answer not taken:', e?.message || e); }
+      if (p.answered) return;
+      try { await pc.setRemoteDescription(JSON.parse(m.body)); p.answered = true; for (const c of p.iceWait || []) await pc.addIceCandidate(c).catch(() => {}); p.iceWait = null; } catch (e) { console.warn('[hawkes-net] link answer not taken:', e?.message || e); }
     } else if (m.kind === 'ice') {
       let c; try { c = JSON.parse(m.body); } catch { return; }
       if (pc.remoteDescription) await pc.addIceCandidate(c).catch(() => {});
