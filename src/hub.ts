@@ -110,6 +110,7 @@ export async function startHub(o: HubOptions = {}) {
   const demo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo.html');
   // Hawkes Studio's playtest bot for the demo (window.hawkesPlaytest: two players meet, move, message, leave).
   const demoPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-playtest.mjs');
+  const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
   // What this process runs: the repo and its commit (from .git, read once), so a deploy can be seen from outside.
   const build = (() => {
@@ -127,11 +128,12 @@ export async function startHub(o: HubOptions = {}) {
       res.writeHead(st.up ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       return void res.end(JSON.stringify({ ok: st.up, service: 'hawkes-net', version: st.version, ...build, usageWaiting: outbox.length }));
     }
-    // The front door is the developer dashboard: docs, and with a hawkesgen.ai sign-in your key, rooms and usage (the page
-    // reads them from the portal, which allows this origin).
-    if (route === '/') {
+    // The front door: on the relay's own names a public landing page (what Hawkes Net is, its live status, the SDKs); on the
+    // dashboard's names (net.hawkesgames.com, net-beta.hawkesgames.com) the developer dashboard, which is also at /dashboard.
+    const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(String(req.headers.host ?? '').split(':')[0]);
+    if (route === '/' || route === '/dashboard') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
-      return void res.end(fs.readFileSync(dashboard));
+      return void res.end(fs.readFileSync(route === '/' && !dashHost ? landing : dashboard));
     }
     // The demo: dots in a room, peer to peer, then the relay (open it in two tabs).
     if (route === '/demo') {

@@ -121,8 +121,8 @@ test('players play on the service, and their usage goes to Gen with the service\
   await wait(() => usage.some((u) => u.rows.some((r: any) => r.project === 'aa-game' && r.transport === 'relay' && r.playerSeconds > 0)), 15_000, `usage at Gen: ${JSON.stringify(usage).slice(0, 600)} (${logs.join('').slice(-300)})`);
 });
 
-test('the front door is the dashboard; the demo page and the SDK are served by the service', async () => {
-  const home = await fetch(`${hubUrl}/`, { redirect: 'manual' });
+test('the dashboard is at /dashboard; the demo page and the SDK are served by the service', async () => {
+  const home = await fetch(`${hubUrl}/dashboard`, { redirect: 'manual' });
   assert.equal(home.status, 200);
   const html = await home.text();
   assert.match(html, /Sign in to Hawkes Net/, 'signed out: the sign-in page');

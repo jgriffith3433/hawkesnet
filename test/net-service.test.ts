@@ -577,3 +577,20 @@ test('an option given as undefined keeps its default: endpoint: undefined goes t
     try { assert.equal(a.transport, 'relay'); } finally { await a.leave(); }
   } finally { delete (globalThis as any).HAWKES_NET_ENDPOINT; }
 });
+
+test('the root is a public landing page with status and the three SDKs; the dashboard keeps its own names and /dashboard', async () => {
+  const root = await fetch(`${endpoint}/`).then((r) => r.text());
+  assert.match(root, /Put your game online/);
+  assert.match(root, /hawkesnet-js/); assert.match(root, /hawkesnet-babylon/); assert.match(root, /hawkesnet-unity/);
+  assert.doesNotMatch(root, /setInterval|setTimeout/, 'the landing page never polls');
+  const dash = await fetch(`${endpoint}/dashboard`).then((r) => r.text());
+  assert.match(dash, /The dashboard of Hawkes Net/);
+  const onDashName = await new Promise<string>((ok, no) => {
+    const u = new URL(endpoint);
+    import('node:http').then(({ default: http }) => http.get({ host: u.hostname, port: u.port, path: '/', headers: { Host: 'net.hawkesgames.com' } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => ok(b)); }).on('error', no));
+  });
+  assert.match(onDashName, /The dashboard of Hawkes Net/);
+  const st = await fetch(`${endpoint}/v1/net/status`).then((r) => r.json());
+  assert.equal(st.health, 'ok');
+  for (const p of ['/sdk/hawkes-net@1.mjs', '/sdk/com.hawkes.net.tgz']) assert.equal((await fetch(`${endpoint}${p}`)).status, 200, p);
+});
