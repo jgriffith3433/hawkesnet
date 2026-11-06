@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage } from 'node:http';
+import { ERRORS } from './errors.ts';
 import { db, DATA_DIR, env, canProject, NetError, type Client } from './store.ts';
 import { netProject, originAllowed, roomConfig, type NetProject } from './registry.ts';
 import { logTicket, addUsage, readable, type Actor } from './projects.ts';
@@ -84,8 +85,8 @@ function pickNode(): NodeRow | null {
 }
 
 export function heartbeat(rec: NodeRecord, client: Client | null) {
-  if (!/^[a-z0-9][a-z0-9._-]{0,40}$/i.test(String(rec.id))) throw new NetError('Bad node id');
-  if (!/^wss?:\/\//.test(String(rec.url))) throw new NetError('A node url is ws:// or wss://');
+  if (!/^[a-z0-9][a-z0-9._-]{0,40}$/i.test(String(rec.id))) throw new NetError('Bad node id', { code: 'node_invalid' });
+  if (!/^wss?:\/\//.test(String(rec.url))) throw new NetError('A node url is ws:// or wss://', { code: 'node_invalid' });
   db.prepare(`INSERT INTO net_nodes (id, url, admin_url, region, status, players, capacity, load, rooms, version, workers, embedded, client, beat_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET url = excluded.url, admin_url = excluded.admin_url, region = excluded.region, status = excluded.status, players = excluded.players,
@@ -140,7 +141,7 @@ const doorHits = new Map<string, number[]>();
 export function doorLimit(key: string, max: number, ms = 60_000) {
   const now = Date.now();
   const recent = (doorHits.get(key) ?? []).filter((t) => now - t < ms);
-  if (recent.length >= max) throw new NetError('Too many tickets; wait a moment', { status: 429 });
+  if (recent.length >= max) throw new NetError('Too many tickets; wait a moment', { code: 'ticket_rate_limited' });
   recent.push(now);
   doorHits.set(key, recent);
   if (doorHits.size > 50_000) for (const [k, v] of doorHits) if (!v.length || now - v[v.length - 1] > ms) doorHits.delete(k);
@@ -163,28 +164,28 @@ export function issueTicket(body: any, auth: TicketAuth) {
 
 function makeTicket(body: any, auth: TicketAuth) {
   const project = String(body?.project ?? '');
-  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(project)) throw new NetError('project is the Hawkes Net project id');
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(project)) throw new NetError('project is the Hawkes Net project id', { code: 'project_invalid' });
   const p = netProject(project);
   // No anonymous projects: one made on net.hawkesgen.ai (or one of Hawkes's games). An owner key (tests, bots) may.
   const root = auth.client && (auth.client.role === 'owner' || auth.client.projects.includes('*'));
-  if (!p.listed && !root) throw new NetError(`No Hawkes Net project "${project}": make one on net.hawkesgen.ai`, { status: 404 });
+  if (!p.listed && !root) throw new NetError(`No Hawkes Net project "${project}": make one on net.hawkesgen.ai`, { code: 'project_not_found' });
   const room = String(body?.room ?? '');
-  if (!ROOM_RE.test(room)) throw new NetError('room is 1 to 64 of letters, digits and / _ . -');
+  if (!ROOM_RE.test(room)) throw new NetError('room is 1 to 64 of letters, digits and / _ . -', { code: 'room_invalid' });
   let role = ['player', 'spectator', 'bot', 'test'].includes(body?.role) ? body.role : 'player';
   if (auth.client) {
-    if (!keyMayIssue(auth.client, p)) throw new NetError(`This key can't make tickets for ${project}`, { status: 403 });
+    if (!keyMayIssue(auth.client, p)) throw new NetError(`This key can't make tickets for ${project}`, { code: 'key_project_forbidden' });
   } else {
-    if (!p.listed || !originAllowed(p, auth.origin, room)) throw new NetError('Tickets without a key only for the project\'s own sites', { status: 403 });
-    if (role === 'bot' || role === 'test') throw new NetError('bot and test tickets need an API key', { status: 403 });
+    if (!p.listed || !originAllowed(p, auth.origin, room)) throw new NetError('Tickets without a key only for the project\'s own sites', { code: 'site_not_allowed' });
+    if (role === 'bot' || role === 'test') throw new NetError('bot and test tickets need an API key', { code: 'role_needs_key' });
     doorLimit(`ip:${auth.ip ?? '?'}`, 30);
     doorLimit(`prj:${project}`, 3000);
   }
   const choice = ['auto', 'p2p', 'relay'].includes(body?.transport) ? body.transport : 'auto';
   let tr = p.transports.filter((t) => choice === 'auto' || t === choice);
   if (!tr.length) tr = p.transports.slice(0, 1);
-  if (!tr.length) throw new NetError(`${project} may not use Hawkes Net`, { status: 403 });
+  if (!tr.length) throw new NetError(`${project} may not use Hawkes Net`, { code: 'project_disabled' });
   const protocols: number[] = Array.isArray(body?.client?.protocols) ? body.client.protocols.map(Number) : [PROTOCOL];
-  if (!protocols.includes(3) && !protocols.includes(2)) throw new NetError('This SDK is too old for Hawkes Net; reload', { status: 426 });
+  if (!protocols.includes(3) && !protocols.includes(2)) throw new NetError('This SDK is too old for Hawkes Net; reload', { code: 'sdk_too_old' });
   const now = Date.now();
 
   // The room: where it lives (one node), its config (fixed by its first ticket) and the next join order.
@@ -201,12 +202,12 @@ function makeTicket(body: any, auth: TicketAuth) {
       // Rooms with people in them count toward the limit; rooms asked for but not joined yet have their own, larger cap
       // (so tickets for rooms nobody enters can't lock a project out of new rooms).
       const open = db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(players), 0) AS players FROM net_rooms WHERE project = ? AND players > 0 AND seen_at > ?").get(project, now - 10 * 60_000) as { n: number; players: number };
-      if (!row && open.n >= p.limits.rooms) throw new NetError(`${project} has ${open.n} rooms open, its limit`, { status: 429 });
+      if (!row && open.n >= p.limits.rooms) throw new NetError(`${project} has ${open.n} rooms open, its limit`, { code: 'rooms_limit' });
       const waiting = (db.prepare('SELECT COUNT(*) AS n FROM net_rooms WHERE project = ? AND players = 0 AND seen_at > ?').get(project, now - 5 * 60_000) as { n: number }).n;
-      if (!row && waiting >= p.limits.rooms * 5) throw new NetError(`${project} has too many rooms waiting for players`, { status: 429 });
-      if (open.players >= p.limits.players) throw new NetError(`${project} has ${open.players} players online, its limit`, { status: 429 });
+      if (!row && waiting >= p.limits.rooms * 5) throw new NetError(`${project} has too many rooms waiting for players`, { code: 'rooms_waiting_limit' });
+      if (open.players >= p.limits.players) throw new NetError(`${project} has ${open.players} players online, its limit`, { code: 'players_limit' });
       node = pickNode();
-      if (!node) throw new NetError('No Hawkes Net node is up right now; try again in a minute', { status: 503 });
+      if (!node) throw new NetError('No Hawkes Net node is up right now; try again in a minute', { code: 'no_node' });
       const cfg = roomConfig(p, body?.config);
       if (!row) {
         db.prepare('INSERT INTO net_rooms (project, room, node, epoch, next_ord, transport, config, players, opened_at, seen_at) VALUES (?, ?, ?, 1, 1, ?, ?, 0, ?, ?)').run(project, room, node.id, choice === 'relay' || !tr.includes('p2p') ? 'relay' : 'p2p', JSON.stringify(cfg), now, now);
@@ -250,17 +251,17 @@ export async function publish(client: Client, body: any) {
   const project = String(body?.project ?? '');
   const room = String(body?.room ?? '');
   const p = netProject(project);
-  if (!keyMayIssue(client, p)) throw new NetError(`This key can't publish to ${project}`, { status: 403 });
+  if (!keyMayIssue(client, p)) throw new NetError(`This key can't publish to ${project}`, { code: 'key_project_forbidden' });
   // "<prefix>/*": every open room under it (a game's edit room and all its play rooms hear one world edit).
   if (room.endsWith('/*')) {
     const prefix = room.slice(0, -1);
-    if (!ROOM_RE.test(prefix.slice(0, -1)) || prefix.length < 3) throw new NetError('Bad room prefix');
+    if (!ROOM_RE.test(prefix.slice(0, -1)) || prefix.length < 3) throw new NetError('Bad room prefix', { code: 'room_prefix_invalid' });
     const names = (db.prepare("SELECT room FROM net_rooms WHERE project = ? AND players > 0 AND substr(room, 1, ?) = ? LIMIT 200").all(project, prefix.length, prefix) as { room: string }[]).map((r) => r.room);
     let delivered = 0;
     for (const name of names) delivered += Number((await publish(client, { ...body, room: name })).delivered) || 0;
     return { delivered, rooms: names.length, open: names.length > 0 };
   }
-  if (!ROOM_RE.test(room)) throw new NetError('Bad room');
+  if (!ROOM_RE.test(room)) throw new NetError('Bad room', { code: 'room_invalid' });
   const row = db.prepare('SELECT node FROM net_rooms WHERE project = ? AND room = ?').get(project, room) as { node: string | null } | undefined;
   const node = row ? nodeById(row.node) : null;
   if (!row || !node || !live(node)) return { delivered: 0, open: false };
@@ -268,18 +269,24 @@ export async function publish(client: Client, body: any) {
   const iat = Math.floor(Date.now() / 1000);
   const token = signToken(PUBLISH_PREFIX, { v: 1, kid: k.kid, prj: project, room, iat, exp: iat + 30, jti: crypto.randomBytes(9).toString('base64url') }, k.privateKey);
   const msg = { ops: Array.isArray(body.ops) ? body.ops : undefined, by: typeof body.by === 'string' ? body.by.slice(0, 60) : 'server', fx: typeof body.fx === 'string' ? body.fx.slice(0, 20) : null, event: body.event && typeof body.event.name === 'string' ? { name: body.event.name, data: body.event.data ?? null } : undefined, except: typeof body.except === 'string' ? body.except : null, kick: body.kick && typeof body.kick === 'object' ? { sub: typeof body.kick.sub === 'string' && body.kick.sub ? body.kick.sub.slice(0, 64) : null } : undefined };
-  if (node.embedded && embedded) return { open: true, ...(await embedded.publish(token, msg)) };
-  if (!node.admin_url) return { delivered: 0, open: true, error: 'This node takes no publishes' };
+  if (node.embedded && embedded) return { open: true, ...nodeAnswer(await embedded.publish(token, msg)) };
+  if (!node.admin_url) throw new NetError('This node takes no publishes', { code: 'node_not_taking_requests' });
   const r = await fetch(`${node.admin_url.replace(/\/+$/, '')}/publish`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(msg), signal: AbortSignal.timeout(5000) }).catch(() => null);
-  if (!r) return { delivered: 0, open: true, error: 'Node not answering' };
-  return { open: true, ...(await r.json().catch(() => ({}))) };
+  if (!r) throw new NetError('Node not answering', { code: 'node_not_answering' });
+  return { open: true, ...nodeAnswer(await r.json().catch(() => ({}))) };
+}
+
+/** What a node answered: a refusal (ok: false) becomes the service's own error, with the node's code. */
+function nodeAnswer(r: any) {
+  if (r && r.ok === false) throw new NetError(String(r.error ?? 'The node refused'), { code: r.code in ERRORS ? r.code : 'publish_refused' });
+  return r;
 }
 
 /** Who is in a room now (a project's own dashboard): each player's id, name, join order, role, your game's id for them
  *  (sub), when they joined, connected or within their grace, and bytes each way. Asked of the room's node with a signed token. */
 export async function roomPlayers(a: Actor, project: string, room: string) {
   readable(a, project);
-  if (!ROOM_RE.test(room)) throw new NetError('Bad room');
+  if (!ROOM_RE.test(room)) throw new NetError('Bad room', { code: 'room_invalid' });
   const r: any = await toRoomNode(project, room, { peek: true });
   return { project, room, open: Boolean(r.open), transport: r.transport ?? null, host: r.host ?? null, players: Array.isArray(r.players) ? r.players : [] };
 }
@@ -287,10 +294,10 @@ export async function roomPlayers(a: Actor, project: string, room: string) {
  *  unless your game stops giving them one. */
 export async function kickPlayer(a: Actor, project: string, room: string, body: any) {
   readable(a, project);
-  if (!ROOM_RE.test(room)) throw new NetError('Bad room');
+  if (!ROOM_RE.test(room)) throw new NetError('Bad room', { code: 'room_invalid' });
   const sub = typeof body?.sub === 'string' && body.sub ? body.sub.slice(0, 64) : null;
   const peer = typeof body?.peer === 'string' && /^p\d{1,9}$/.test(body.peer) ? body.peer : null;
-  if (!sub && !peer) throw new NetError('sub or peer: who to put out');
+  if (!sub && !peer) throw new NetError('sub or peer: who to put out', { code: 'kick_target_required' });
   const r: any = await toRoomNode(project, room, { kick: { sub, peer } });
   return { project, room, kicked: Number(r.kicked) || 0 };
 }
@@ -301,11 +308,11 @@ async function toRoomNode(project: string, room: string, msg: any) {
   const k = keys().pair;
   const iat = Math.floor(Date.now() / 1000);
   const token = signToken(PUBLISH_PREFIX, { v: 1, kid: k.kid, prj: project, room, iat, exp: iat + 30, jti: crypto.randomBytes(9).toString('base64url') }, k.privateKey);
-  if (node.embedded && embedded) return { open: true, ...(await embedded.publish(token, msg)) };
-  if (!node.admin_url) return { open: true, players: [], error: 'This node takes no requests' };
+  if (node.embedded && embedded) return { open: true, ...nodeAnswer(await embedded.publish(token, msg)) };
+  if (!node.admin_url) throw new NetError('This node takes no requests', { code: 'node_not_taking_requests' });
   const r = await fetch(`${node.admin_url.replace(/\/+$/, '')}/publish`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(msg), signal: AbortSignal.timeout(5000) }).catch(() => null);
-  if (!r) return { open: true, players: [], error: 'Node not answering' };
-  return { open: true, ...(await r.json().catch(() => ({}))) };
+  if (!r) throw new NetError('Node not answering', { code: 'node_not_answering' });
+  return { open: true, ...nodeAnswer(await r.json().catch(() => ({}))) };
 }
 
 /** Is a room open (someone in it, on a live node), how many are in it, and on what? (Invitations ask before loading.) */
@@ -313,8 +320,8 @@ export function roomInfo(client: Client, body: any) {
   const project = String(body?.project ?? '');
   const room = String(body?.room ?? '');
   const p = netProject(project);
-  if (!keyMayIssue(client, p)) throw new NetError(`This key can't read ${project}`, { status: 403 });
-  if (!ROOM_RE.test(room)) throw new NetError('Bad room');
+  if (!keyMayIssue(client, p)) throw new NetError(`This key can't read ${project}`, { code: 'key_project_forbidden' });
+  if (!ROOM_RE.test(room)) throw new NetError('Bad room', { code: 'room_invalid' });
   const row = db.prepare('SELECT * FROM net_rooms WHERE project = ? AND room = ?').get(project, room) as RoomRow | undefined;
   const node = row ? nodeById(row.node) : null;
   const open = Boolean(row && live(node) && row.players > 0);
@@ -327,11 +334,11 @@ export function roomInfo(client: Client, body: any) {
  * sites could join anyway; per-address limits like the door's.
  */
 export function publicCounts(project: string, rooms: string[], ip: string | null) {
-  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(project)) throw new NetError('project is the Hawkes Net project id');
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(project)) throw new NetError('project is the Hawkes Net project id', { code: 'project_invalid' });
   const p = netProject(project);
-  if (!p.listed || !p.origins.length) throw new NetError(`${project} has no public counts`, { status: 403 });
+  if (!p.listed || !p.origins.length) throw new NetError(`${project} has no public counts`, { code: 'counts_not_public' });
   const names = [...new Set(rooms.map((r) => r.trim()).filter(Boolean))];
-  if (!names.length || names.length > 24 || names.some((r) => !ROOM_RE.test(r))) throw new NetError('rooms is 1 to 24 room names, comma separated');
+  if (!names.length || names.length > 24 || names.some((r) => !ROOM_RE.test(r))) throw new NetError('rooms is 1 to 24 room names, comma separated', { code: 'counts_rooms_invalid' });
   doorLimit(`cnt:${ip ?? '?'}`, 120);
   const out: Record<string, number> = {};
   const get = db.prepare('SELECT * FROM net_rooms WHERE project = ? AND room = ?');
@@ -347,7 +354,7 @@ export function publicCounts(project: string, rooms: string[], ip: string | null
 export function projectRooms(client: Client, body: any) {
   const project = String(body?.project ?? '');
   const p = netProject(project);
-  if (!keyMayIssue(client, p)) throw new NetError(`This key can't read ${project}`, { status: 403 });
+  if (!keyMayIssue(client, p)) throw new NetError(`This key can't read ${project}`, { code: 'key_project_forbidden' });
   const now = Date.now();
   const rows = db.prepare('SELECT room, transport, players, opened_at, seen_at FROM net_rooms WHERE project = ? AND seen_at > ? AND (players > 0 OR opened_at > ?) ORDER BY players DESC, seen_at DESC LIMIT 200')
     .all(project, now - 10 * 60_000, now - 2 * 60_000) as { room: string; transport: string; players: number; opened_at: number; seen_at: number }[];

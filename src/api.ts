@@ -26,19 +26,22 @@ import * as svc from './service.ts';
 import * as projects from './projects.ts';
 import { packageTarball } from './tarball.ts';
 import * as records from './records.ts';
+import { ERROR_CODES, ERRORS, errorBody, errorStatus, type ErrorCode } from './errors.ts';
 
 const SDK_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'sdk', 'js');
 const send = (res: ServerResponse, status: number, body: unknown) => {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(body));
 };
+/** An error answer: { code, message, docs, error } with the code's status (src/errors.ts, docs/errors.md). */
+export const fail = (res: ServerResponse, code: ErrorCode, message?: string) => send(res, errorStatus(code), errorBody(code, message));
 async function readJson(req: IncomingMessage, limit = 256 * 1024) {
   const chunks: Buffer[] = [];
   let n = 0;
-  for await (const c of req) { n += c.length; if (n > limit) throw new NetError('Request body too large', { status: 413 }); chunks.push(c); }
+  for await (const c of req) { n += c.length; if (n > limit) throw new NetError('Request body too large', { code: 'body_too_large' }); chunks.push(c); }
   const text = Buffer.concat(chunks).toString('utf8');
   if (!text.trim()) return {};
-  try { return JSON.parse(text); } catch { throw new NetError('Body is not valid JSON'); }
+  try { return JSON.parse(text); } catch { throw new NetError('Body is not valid JSON', { code: 'bad_json' }); }
 }
 /** How a request's key is checked (the box asks Gen: src/hub.ts). Unset, no key is accepted. */
 type KeyCheck = (req: IncomingMessage) => Client | null | Promise<Client | null>;
@@ -51,8 +54,8 @@ export function useKeyCheck(fn: KeyCheck) { checkKey = fn; }
 /** Nodes report with a key that may act for "hawkesnet" (or an admin key). */
 async function nodeClient(req: IncomingMessage): Promise<Client> {
   const c = await checkKey(req);
-  if (!c) throw new NetError('A node key is needed', { status: 401 });
-  if (!(c.role === 'owner' || c.role === 'admin' || canProject(c, 'hawkesnet'))) throw new NetError('This key is not a Hawkes Net node key', { status: 403 });
+  if (!c) throw new NetError('A node key is needed', { code: 'key_required' });
+  if (!(c.role === 'owner' || c.role === 'admin' || canProject(c, 'hawkesnet'))) throw new NetError('This key is not a Hawkes Net node key', { code: 'node_key_forbidden' });
   return c;
 }
 
@@ -104,15 +107,15 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
         res.setHeader('Access-Control-Max-Age', '600');
       }
       if (method === 'OPTIONS') return void res.writeHead(204).end();
-      if (method !== 'POST') return send(res, 405, { error: 'POST a ticket request' });
+      if (method !== 'POST') return fail(res, 'method_not_allowed', 'POST a ticket request');
       const body = await readJson(req);
       const hasKey = Boolean(req.headers.authorization || req.headers['x-hawkesgen-key']);
       const client = await checkKey(req);
-      if (hasKey && !client) return send(res, 401, { error: 'Unknown or disabled API key' });
+      if (hasKey && !client) return fail(res, 'key_invalid', 'Unknown or disabled API key');
       // A browser page with no key goes through the public door (its origin); everything else needs a key.
       const viaDoor = !hasKey && Boolean(origin);
       const auth = svc.ticketAuth(req, viaDoor ? null : client);
-      if (!viaDoor && !client) return send(res, 401, { error: 'A Gen API key, or a page on the project\'s own site' });
+      if (!viaDoor && !client) return fail(res, 'key_or_site_required', 'A Gen API key, or a page on the project\'s own site');
       return send(res, 200, svc.issueTicket(body, auth));
     }
     // Records (records.ts): a game's public store (a leaderboard's signed results). Reads are open to every page; a page
@@ -128,14 +131,14 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
         const q = new URL(req.url ?? '/', 'http://x').searchParams;
         return send(res, 200, records.getRecords(String(q.get('project') ?? ''), String(q.get('tag') ?? ''), { since: Number(q.get('since')) || 0, limit: Number(q.get('limit')) || undefined, test: q.get('test') === '1' }));
       }
-      if (method !== 'POST') return send(res, 405, { error: 'GET or POST' });
+      if (method !== 'POST') return fail(res, 'method_not_allowed', 'GET or POST');
       const body = await readJson(req, 16 * 1024);
       const hasKey = Boolean(req.headers.authorization);
       // (As for tickets: a page with an Origin goes through the door; a key, or a developer's own machine, acts as itself.)
       const c = hasKey || !origin ? await checkKey(req) : null;
-      if (hasKey && !c) return send(res, 401, { error: 'Unknown or disabled API key' });
-      if (c && !svc.keyMayIssue(c, netProject(String(body?.project ?? '')))) return send(res, 403, { error: "This key can't write that project's records" });
-      if (!c) { if (!origin) return send(res, 401, { error: "A key, or a page on the project's own sites" }); svc.doorLimit(`rec-w:${ip}`, 30); }
+      if (hasKey && !c) return fail(res, 'key_invalid', 'Unknown or disabled API key');
+      if (c && !svc.keyMayIssue(c, netProject(String(body?.project ?? '')))) return fail(res, 'key_project_forbidden', "This key can't write that project's records");
+      if (!c) { if (!origin) return fail(res, 'key_or_site_required', "A key, or a page on the project's own sites"); svc.doorLimit(`rec-w:${ip}`, 30); }
       return send(res, 200, records.putRecord(body, c ? null : { origin }));
     }
     if (route === '/v1/net/counts' && (method === 'GET' || method === 'OPTIONS')) {
@@ -156,12 +159,12 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
     }
     if (route === '/v1/net/publish' && method === 'POST') {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A Gen key is needed' });
+      if (!c) return fail(res, 'key_required', 'A Gen key is needed');
       return send(res, 200, await svc.publish(c, await readJson(req, 2 * 1024 * 1024)));
     }
     if (route === '/v1/net/room' && method === 'POST') {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A Gen key is needed' });
+      if (!c) return fail(res, 'key_required', 'A Gen key is needed');
       return send(res, 200, svc.roomInfo(c, await readJson(req)));
     }
     if (route === '/v1/net/nodes/heartbeat' && method === 'POST') return send(res, 200, svc.heartbeat(await readJson(req), await nodeClient(req)));
@@ -169,14 +172,14 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
     if (route === '/v1/net/usage' && method === 'POST') { await nodeClient(req); return send(res, 200, svc.recordNetUsage(await readJson(req, 4 * 1024 * 1024))); }
     if (route === '/v1/net/keys/rotate' && method === 'POST') {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A key is needed' });
-      if (c.role !== 'owner') throw new NetError('Only an owner key may rotate the signing keys', { status: 403 });
+      if (!c) return fail(res, 'key_required', 'A key is needed');
+      if (c.role !== 'owner') throw new NetError('Only an owner key may rotate the signing keys', { code: 'owner_key_required' });
       return send(res, 200, { keys: svc.rotateKeys() });
     }
     // A developer's own rooms (their key, narrowed to their project like every Gen call).
     if (route === '/v1/net/rooms' && method === 'POST') {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A Gen key is needed' });
+      if (!c) return fail(res, 'key_required', 'A Gen key is needed');
       return send(res, 200, svc.projectRooms(c, await readJson(req)));
     }
     // Projects (docs/net.md "Projects and accounts"): an account's own, through the portal's key (owner, admin and tier
@@ -184,7 +187,7 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
     const pm = /^\/v1\/net\/projects(?:\/([a-z0-9][a-z0-9._-]{0,63})(?:\/(claim|rooms)(?:\/(.+?)(?:\/(kick))?)?)?)?$/i.exec(route);
     if (pm) {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A key is needed' });
+      if (!c) return fail(res, 'key_required', 'A key is needed');
       const q = new URL(req.url ?? '/', 'http://x').searchParams;
       const body = method === 'POST' ? await readJson(req) : {};
       const pick = (k: string) => body?.[k] ?? q.get(k);
@@ -200,20 +203,22 @@ export async function handleNet(req: IncomingMessage, res: ServerResponse, route
       if (id && part === 'claim' && method === 'POST') return send(res, 200, projects.claimProject(a, id));
       if (id && part === 'rooms' && room && !kick && method === 'GET') return send(res, 200, await svc.roomPlayers(a, id, room));
       if (id && part === 'rooms' && room && kick && method === 'POST') return send(res, 200, await svc.kickPlayer(a, id, room, body));
-      return send(res, 405, { error: 'Not a projects route' });
+      return fail(res, 'method_not_allowed', 'Not a projects route');
     }
     // The operator's view (an owner or admin key): every node and worker, rooms per project, what waits to reach Gen.
     if (route === '/v1/net/ops' && method === 'GET') {
       const c = await checkKey(req);
-      if (!c) return send(res, 401, { error: 'A key is needed' });
-      if (c.role !== 'owner' && c.role !== 'admin') return send(res, 403, { error: 'Only an owner or admin key sees the operator view' });
+      if (!c) return fail(res, 'key_required', 'A key is needed');
+      if (c.role !== 'owner' && c.role !== 'admin') return fail(res, 'admin_key_required', 'Only an owner or admin key sees the operator view');
       return send(res, 200, { ...svc.status(), node: await svc.ownNode()?.stats().catch(() => null), extra: opsExtra() });
     }
+    // The error catalog (docs/errors.md): the same list as the docs page, as JSON.
+    if (route === '/v1/net/errors' && method === 'GET') { res.setHeader('Access-Control-Allow-Origin', '*'); return send(res, 200, { errors: ERROR_CODES.map((code) => ({ code, ...ERRORS[code], docs: errorBody(code).docs })) }); }
     if (route === '/v1/net/nodes' && method === 'GET') { res.setHeader('Access-Control-Allow-Origin', '*'); return send(res, 200, { nodes: svc.status().nodes }); }
-    return send(res, 404, { error: 'Not found' });
+    return fail(res, 'not_found');
   } catch (e: any) {
-    if (e instanceof NetError) return send(res, (e as any).status ?? 400, { error: e.message });
+    if (e instanceof NetError) return fail(res, e.code, e.message);
     console.error('[net]', e);
-    return send(res, 500, { error: String(e?.message ?? e) });
+    return fail(res, 'internal', 'The service failed on its own; try again in a moment');
   }
 }

@@ -6,6 +6,8 @@
 //                Hawkes Net, see each other move (this page's player moved by real input), trade messages both ways,
 //                and the second one leaves. One browser is enough, so every playtest is a real two-player check.
 //   arena        names and dots stay inside the arena and players on one spot are drawn apart (needs o.view and o.cornerDrive).
+//   errors       the service's errors (docs/errors.md): each refusal the page can cause answers with a code, a plain message
+//                and a docs link, and the docs page lists every code.
 //   two-players  two (or more) real browsers on one ?room= (Studio's peers playtest) find each other, move, and trade
 //                messages.
 //
@@ -32,6 +34,8 @@ export function installNetPlaytest(o) {
       description: 'Connects to the page\'s Hawkes Net, opens a second player in the same room, checks poses both ways (this page\'s player moved by real input), messages both ways, and the second player leaving.' },
     { id: 'two-players', title: 'Real browsers on one ?room= find each other, move and message', seconds: 75, tags: ['full', 'multiplayer'],
       description: 'Run with Studio peers 2-4: each browser waits for another player in its ?room=, moves by real input, checks it sees the other move and that messages go both ways.' },
+    { id: 'errors', title: 'Every error has a code, a plain message and a docs link, and the docs page lists every code', seconds: 40, tags: ['full'],
+      description: 'Makes the service refuse a dozen requests (an unknown route, bad JSON, a bad room, a missing key, a bot ticket, an old SDK...) and checks each answer has code, message and a docs link that matches the code, then opens the docs page and checks it lists every code the service says it has.' },
     { id: 'arena', title: 'Names and dots stay inside the arena, and players on one spot stay apart', seconds: 60, tags: ['full'],
       description: 'Moves this page\'s player into the top-left corner by real arrow keys, sends a second player to the opposite corner, outside the arena, and onto this player\'s spot, and checks every dot and name is drawn inside the arena and no two dots overlap.' },
   ];
@@ -301,6 +305,65 @@ export function installNetPlaytest(o) {
     finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
   }
 
+  /** The errors scenario: requests the service must refuse, and the docs page that explains each code. */
+  async function errors() {
+    const base = (o.endpoint ? o.endpoint() : window.HAWKES_NET_ENDPOINT) || location.origin;
+    const seen = new Map();
+    const json = (b) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
+    const ticket = (b, init = {}) => ({ ...json({ project: 'netdemo', room: 'errors', client: { protocols: [3] }, ...b }), ...init });
+    const cases = [
+      ['not_found', 404, '/v1/net/nothing-here', {}],
+      ['method_not_allowed', 405, '/v1/net/ticket', {}],
+      ['bad_json', 400, '/v1/net/ticket', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{nope' }],
+      ['project_invalid', 400, '/v1/net/ticket', ticket({ project: 'no spaces!' })],
+      ['project_not_found', 404, '/v1/net/ticket', ticket({ project: 'nobodys-game-zz' })],
+      ['room_invalid', 400, '/v1/net/ticket', ticket({ room: 'bad room!' })],
+      ['role_needs_key', 403, '/v1/net/ticket', ticket({ role: 'bot' })],
+      ['sdk_too_old', 426, '/v1/net/ticket', ticket({ client: { protocols: [1] } })],
+      ['key_invalid', 401, '/v1/net/ticket', ticket({}, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer not-a-real-key' } })],
+      ['key_required', 401, '/v1/net/room', json({ project: 'netdemo', room: 'errors' })],
+      ['counts_not_public', 403, '/v1/net/counts?project=nobodys-game-zz&rooms=a', {}],
+      ['project_not_found', 404, '/v1/net/records', json({ project: 'nobodys-game-zz', event: {} })],
+    ];
+    progress(0.05);
+    let n = 0;
+    for (const [code, status, route, init] of cases) {
+      await check(`${code}: ${init.method ?? 'GET'} ${route.split('?')[0]} answers ${status} with code, message and docs link`, async () => {
+        const r = await fetch(base + route, init);
+        const b = await r.json().catch(() => null);
+        if (r.status !== status) throw new Error(`status ${r.status}, wanted ${status}: ${JSON.stringify(b)}`);
+        if (!b || b.code !== code) throw new Error(`code ${b?.code}, wanted ${code}`);
+        if (typeof b.message !== 'string' || b.message.length < 4) throw new Error('no plain message');
+        if (!/^https?:\/\/[^ ]+\/docs\/errors#/.test(b.docs ?? '') || !b.docs.endsWith(`#${code}`)) throw new Error(`docs link ${b.docs}`);
+        seen.set(code, b.docs); event('error', `${code}: ${b.message}`);
+        return `${b.code} · ${b.message}`.slice(0, 120);
+      });
+      progress(0.1 + 0.6 * (++n / cases.length));
+    }
+    metric('errorsChecked', seen.size);
+    let codes = [];
+    await check('The service lists every code it can answer with', async () => {
+      const r = await fetch(`${base}/v1/net/errors`);
+      codes = (await r.json()).errors.map((e) => e.code);
+      if (codes.length < 30) throw new Error(`only ${codes.length} codes`);
+      metric('codes', codes.length);
+      return `${codes.length} codes`;
+    });
+    progress(0.8);
+    await check('The docs page lists every code, each with its own anchor', async () => {
+      const r = await fetch(`${base}/docs/errors`);
+      if (!r.ok) throw new Error(`docs page answered ${r.status}`);
+      const html = await r.text();
+      const missing = codes.filter((c) => !html.includes(`id="${c}"`));
+      if (missing.length) throw new Error(`not on the page: ${missing.slice(0, 5).join(', ')}`);
+      for (const c of seen.keys()) if (!codes.includes(c)) throw new Error(`${c} was answered but is not in the list`);
+      return `${codes.length} of ${codes.length} on the page`;
+    });
+    progress(1);
+    await wait(1500);
+    finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
+  }
+
   const api = {
     version: 1,
     product: o.product,
@@ -314,7 +377,7 @@ export function installNetPlaytest(o) {
       event('start', id); event('scene', 'Demo'); show();
       try {
         if (!sc) { problem('bug', `no playtest scenario "${id}" (have: ${scenarios.map((s) => s.id).join(', ')})`); return finish('error'); }
-        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : smoke());
+        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : id === 'errors' ? errors() : smoke());
       } catch (e) {
         if (mine === run && !mine.done) { problem('bug', `bot error: ${e?.message ?? e}`); log(String(e?.stack ?? e)); finish('error'); }
       } finally {

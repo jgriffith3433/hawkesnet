@@ -81,7 +81,7 @@ export class Rooms {
    */
   upgrade(headers: Headers, url: URL, raw: Duplex, head: Uint8Array | null) {
     const now = Date.now();
-    if (this.draining) return refuse(raw, 503, 'This node is draining; ask for a new ticket');
+    if (this.draining) return refuse(raw, 'node_draining', 'This node is draining; ask for a new ticket');
     // Sockets per address in this process (behind a proxy on this machine, the address it forwarded for).
     const remote = String((raw as any).remoteAddress ?? '');
     const fwd = String(headers['x-forwarded-for'] ?? '').split(',').pop()!.trim();
@@ -89,7 +89,7 @@ export class Rooms {
     const ip = local && fwd ? fwd : remote || '?';
     const had = this.byIp.get(ip) ?? 0;
     // (This machine itself, not through the proxy, isn't capped: load tests and Gen's own bots.)
-    if (!(local && !fwd) && had >= PER_IP) return refuse(raw, 429, 'Too many connections from this address');
+    if (!(local && !fwd) && had >= PER_IP) return refuse(raw, 'connections_limit', 'Too many connections from this address');
     this.byIp.set(ip, had + 1);
     raw.once('close', () => { const n = (this.byIp.get(ip) ?? 1) - 1; if (n > 0) this.byIp.set(ip, n); else this.byIp.delete(ip); });
     const v = url.searchParams.get('v') === '2' ? 2 : 3;
@@ -99,24 +99,24 @@ export class Rooms {
       const room = r && this.rooms.get(`${r.prj}/${r.room}`);
       const peer = room && room.peers.get(r!.peer);
       // Only this instance of the room: one closed and opened again reuses peer ids, and an old token must not take one.
-      if (!r || !room || !peer || r.inst !== room.opened) return refuse(raw, 410, 'That place in the room is gone; join again');
+      if (!r || !room || !peer || r.inst !== room.opened) return refuse(raw, 'resume_gone', 'That place in the room is gone; join again');
       const ws = accept(headers, raw, head, { maxMessage: room.lim.messageBytes || 64 * 1024, idleMs: IDLE_MS, protocols: ['hawkes-net.v3', 'hawkes-net.v2'] });
       if (!ws) return;
       return this.attach(room, peer, ws, v, now, true);
     }
     const checked = verifyToken<Payload>(TICKET_PREFIX, url.searchParams.get('t') ?? '', this.keys);
-    if (!checked.ok) { this.stats.refusedTicket++; return refuse(raw, 401, `Ticket refused: ${checked.why}`); }
+    if (!checked.ok) { this.stats.refusedTicket++; return refuse(raw, 'ticket_refused', `Ticket refused: ${checked.why}`); }
     const t = checked.payload;
-    if (t.node && t.node !== this.o.node) { this.stats.refusedTicket++; return refuse(raw, 409, `This ticket is for node ${t.node}`); }
-    if (!this.seen.first(t.jti, t.exp)) { this.stats.refusedTicket++; return refuse(raw, 401, 'Ticket already used'); }
+    if (t.node && t.node !== this.o.node) { this.stats.refusedTicket++; return refuse(raw, 'ticket_wrong_node', `This ticket is for node ${t.node}`); }
+    if (!this.seen.first(t.jti, t.exp)) { this.stats.refusedTicket++; return refuse(raw, 'ticket_used', 'Ticket already used'); }
     const key = `${t.prj}/${t.room}`;
     let room = this.rooms.get(key);
-    if (room && t.epoch && t.epoch < room.dirEpoch) return refuse(raw, 409, 'Old ticket for this room; ask for a new one');
+    if (room && t.epoch && t.epoch < room.dirEpoch) return refuse(raw, 'ticket_stale', 'Old ticket for this room; ask for a new one');
     // The room's mode is the ticket's (Gen decided it from the request); a URL can't change it.
     const want = t.want || 'auto';
     if (!room) room = this.open(t, want, now);
     // A peer id is one person: a ticket for an id already here is stale (the directory forgot the room and counted again).
-    if (room.peers.has(t.peer)) { if (!room.peers.size) this.close(room); return refuse(raw, 409, 'Old ticket for this room; ask for a new one'); }
+    if (room.peers.has(t.peer)) { if (!room.peers.size) this.close(room); return refuse(raw, 'ticket_stale', 'Old ticket for this room; ask for a new one'); }
     const max = Math.min(room.cfg.maxPlayers || 64, room.lim.playersPerRoom || 64);
     const present = [...room.peers.values()].filter((p) => p.role !== 'spectator').length;
     // A p2p-only room past its p2p size can't grow (the game shards it); 'auto' moves to the relay instead (below).
@@ -335,9 +335,9 @@ export class Rooms {
   /** A publish token from Gen (hp1, signed with Gen's service key) and what it carries: world edits or an event. */
   publish(token: string, body: { ops?: unknown[]; by?: string; fx?: string | null; event?: { name: string; data: unknown }; except?: string | null; kick?: { sub: string | null; peer?: string | null }; peek?: boolean }) {
     const checked = verifyToken<{ kid: string; exp: number; prj: string; room: string; jti: string }>(PUBLISH_PREFIX, token, this.keys);
-    if (!checked.ok) return { ok: false, status: 401, error: `Publish refused: ${checked.why}` };
+    if (!checked.ok) return { ok: false, status: 401, code: 'publish_refused', error: `Publish refused: ${checked.why}` };
     const p = checked.payload;
-    if (!this.seen.first(`pub:${p.jti}`, p.exp)) return { ok: false, status: 401, error: 'Publish token already used' };
+    if (!this.seen.first(`pub:${p.jti}`, p.exp)) return { ok: false, status: 401, code: 'publish_refused', error: 'Publish token already used' };
     const room = this.rooms.get(`${p.prj}/${p.room}`);
     if (!room) return { ok: true, delivered: 0, players: [] };
     // Who is here (the project's dashboard): nothing is sent to the room.

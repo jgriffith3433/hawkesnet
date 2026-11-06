@@ -1,6 +1,7 @@
 // What the Hawkes Net service keeps for itself: its settings (the environment), its data folder and database (the room
 // directory, the signing keys), the error type its routes answer with, and the shape of a checked API key. Nothing here
 // comes from Hawkes Gen: the service runs on its own box and asks Gen only to check keys and to take usage.
+import { errorStatus, type ErrorCode } from './errors.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,12 +21,14 @@ db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA synchrono
  *  anything outside a browser can say it is localhost). */
 export const trustLocalhost = () => env('NET_TRUST_LOCALHOST') === '1';
 
-/** A refusal with an HTTP status (400 unless said). */
+/** A refusal: a catalog code (src/errors.ts, which gives its HTTP status) and a message that says what was wrong. */
 export class NetError extends Error {
   status: number;
-  constructor(message: string, o: { status?: number } = {}) {
+  code: ErrorCode;
+  constructor(message: string, o: { code: ErrorCode }) {
     super(message);
-    this.status = o.status ?? 400;
+    this.code = o.code;
+    this.status = errorStatus(o.code);
   }
 }
 

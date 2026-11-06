@@ -31,7 +31,8 @@ export type ProjectRow = { id: string; owner: string; name: string; origins: str
 let rowOf: ((id: string) => ProjectRow | null) | null = null;
 export function useProjectRows(fn: ((id: string) => ProjectRow | null) | null) { rowOf = fn; }
 
-const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'projects.json');
+// (NET_PROJECTS_FILE: another file, for tests that need a project the real one doesn't have.)
+const FILE = process.env.NET_PROJECTS_FILE || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'projects.json');
 const BASE_LIMITS: Limits = { rooms: 200, players: 2000, egressBytesPerSec: 5 * 1024 * 1024, monthlyBytes: 5e12, ...DEFAULT_LIMITS } as Limits;
 const BASE_CONFIG: RoomConfig = { topology: 'star', profile: 'medium', maxPlayers: 64, p2pMax: 8, interest: DEFAULT_INTEREST };
 /** An account that hasn't paid: enough to build and test a game, not to run one (the relay's bytes cost us). */

@@ -67,16 +67,16 @@ export function actor(c: Client, owner: unknown, admin: unknown): Actor {
   if (c.role === 'owner' || c.role === 'admin' || c.projects.includes('*')) return { owner: o || null, admin: true };
   const patterns = c.projects.filter((p) => p.endsWith('*'));
   if (patterns.length) {
-    if (!OWNER_RE.test(o) || !patterns.some((p) => o.startsWith(p.slice(0, -1)))) throw new NetError('owner is the account to act for (its project)');
+    if (!OWNER_RE.test(o) || !patterns.some((p) => o.startsWith(p.slice(0, -1)))) throw new NetError('owner is the account to act for (its project)', { code: 'account_required' });
     return { owner: o, admin: admin === true || admin === 'true' || admin === '1' };
   }
   if (c.projects.length === 1 && OWNER_RE.test(c.projects[0])) return { owner: c.projects[0], admin: false };
-  throw new NetError('This key does not act for an account', { status: 403 });
+  throw new NetError('This key does not act for an account', { code: 'key_no_account' });
 }
 const mayRead = (a: Actor, p: NetProject) => a.admin || (p.owner !== null && p.owner === a.owner);
 function mine(a: Actor, id: string) {
   const p = netProject(id);
-  if (!p.listed || !mayRead(a, p)) throw new NetError(`No project "${id}" in this account`, { status: 404 });
+  if (!p.listed || !mayRead(a, p)) throw new NetError(`No project "${id}" in this account`, { code: 'project_not_found' });
   return p;
 }
 
@@ -135,16 +135,16 @@ export const MAX_SITES = 20;
 
 /** A new project for the account ({ name, id? }): its id is what the game passes (`project`). */
 export function createProject(a: Actor, body: any) {
-  if (!a.owner) throw new NetError('owner is the account the project is for');
+  if (!a.owner) throw new NetError('owner is the account the project is for', { code: 'account_required' });
   const name = cleanName(body?.name);
-  if (!name) throw new NetError('Give the project a name');
+  if (!name) throw new NetError('Give the project a name', { code: 'project_name_required' });
   const n = (db.prepare('SELECT COUNT(*) AS n FROM net_projects WHERE owner = ?').get(a.owner) as { n: number }).n;
-  if (n >= MAX_PROJECTS && !a.admin) throw new NetError(`An account has at most ${MAX_PROJECTS} projects`, { status: 409 });
+  if (n >= MAX_PROJECTS && !a.admin) throw new NetError(`An account has at most ${MAX_PROJECTS} projects`, { code: 'project_limit' });
   let id: string;
   if (body?.id) {
     id = String(body.id).trim().toLowerCase();
-    if (!ID_RE.test(id)) throw new NetError('The id is 3 to 40 of lower-case letters, digits and -, starting with a letter');
-    if (taken(id)) throw new NetError(`"${id}" is taken`, { status: 409 });
+    if (!ID_RE.test(id)) throw new NetError('The id is 3 to 40 of lower-case letters, digits and -, starting with a letter', { code: 'project_id_invalid' });
+    if (taken(id)) throw new NetError(`"${id}" is taken`, { code: 'project_id_taken' });
   } else {
     const base = slug(name).length >= 3 ? slug(name) : `game-${slug(name)}`.replace(/-$/, '') || 'game';
     id = base;
@@ -160,14 +160,14 @@ export function createProject(a: Actor, body: any) {
 const ORIGIN_RE = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(:\d{1,5})?$/;
 function cleanSites(list: unknown): string[] {
   const raw: unknown[] = Array.isArray(list) ? list : [];
-  if (raw.length > MAX_SITES) throw new NetError(`At most ${MAX_SITES} sites`);
+  if (raw.length > MAX_SITES) throw new NetError(`At most ${MAX_SITES} sites`, { code: 'sites_invalid' });
   const out: string[] = [];
   for (const v of raw) {
     let o = String(v ?? '').trim().toLowerCase().replace(/\/+$/, '');
     if (!o) continue;
     if (!/^[a-z]+:\/\//.test(o)) o = `https://${o}`;
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) throw new NetError('localhost needs no entry: it may always join the test rooms (t-...)');
-    if (!ORIGIN_RE.test(o)) throw new NetError(`${String(v)} is not a site: https://your-game.com (no path)`);
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) throw new NetError('localhost needs no entry: it may always join the test rooms (t-...)', { code: 'sites_invalid' });
+    if (!ORIGIN_RE.test(o)) throw new NetError(`${String(v)} is not a site: https://your-game.com (no path)`, { code: 'sites_invalid' });
     if (!out.includes(o)) out.push(o);
   }
   return out;
@@ -178,10 +178,10 @@ function cleanSites(list: unknown): string[] {
 export function updateProject(a: Actor, id: string, body: any) {
   const p = mine(a, id);
   const r = row(id);
-  if (!r) throw new NetError(`"${id}" is one of Hawkes's games nobody has taken: take it first`, { status: 409 });
+  if (!r) throw new NetError(`"${id}" is one of Hawkes's games nobody has taken: take it first`, { code: 'project_unclaimed' });
   const sets: string[] = [];
   const vals: any[] = [];
-  if (body?.name !== undefined) { const name = cleanName(body.name); if (!name) throw new NetError('Give the project a name'); sets.push('name = ?'); vals.push(name); }
+  if (body?.name !== undefined) { const name = cleanName(body.name); if (!name) throw new NetError('Give the project a name', { code: 'project_name_required' }); sets.push('name = ?'); vals.push(name); }
   if (body?.sites !== undefined) {
     // A Hawkes game with no sites of its own here uses its file's: null puts that back.
     const sites = body.sites === null && p.hawkes ? null : cleanSites(body.sites);
@@ -190,7 +190,7 @@ export function updateProject(a: Actor, id: string, body: any) {
   if (body?.p2p !== undefined) { sets.push('p2p = ?'); vals.push(body.p2p === true ? 1 : 0); }
   if (body?.maxPlayers !== undefined) {
     const m = body.maxPlayers === null ? null : Number(body.maxPlayers);
-    if (m !== null && (!Number.isInteger(m) || m < 1 || m > p.limits.playersPerRoom)) throw new NetError(`A room holds 1 to ${p.limits.playersPerRoom} players on this project's plan`);
+    if (m !== null && (!Number.isInteger(m) || m < 1 || m > p.limits.playersPerRoom)) throw new NetError(`A room holds 1 to ${p.limits.playersPerRoom} players on this project's plan`, { code: 'room_size_invalid' });
     sets.push('max_players = ?'); vals.push(m);
   }
   if (!sets.length) return view(p);
@@ -204,7 +204,7 @@ export function updateProject(a: Actor, id: string, body: any) {
  *  game is let go: back to its file, nobody's. */
 export function deleteProject(a: Actor, id: string) {
   const p = mine(a, id);
-  if (!row(id)) throw new NetError(`"${id}" is not in an account`, { status: 409 });
+  if (!row(id)) throw new NetError(`"${id}" is not in an account`, { code: 'project_not_in_account' });
   db.prepare('DELETE FROM net_projects WHERE id = ?').run(id);
   forget(id);
   return { ok: true, id, released: p.hawkes };
@@ -212,11 +212,11 @@ export function deleteProject(a: Actor, id: string) {
 
 /** An admin takes one of Hawkes's games into their account (it shows with their projects; its settings from the file). */
 export function claimProject(a: Actor, id: string) {
-  if (!a.admin || !a.owner) throw new NetError('Only an admin takes Hawkes\'s games', { status: 403 });
+  if (!a.admin || !a.owner) throw new NetError('Only an admin takes Hawkes\'s games', { code: 'admin_required' });
   const p = netProject(id);
-  if (!p.hawkes) throw new NetError(`"${id}" is not one of Hawkes's games`, { status: 404 });
+  if (!p.hawkes) throw new NetError(`"${id}" is not one of Hawkes's games`, { code: 'not_hawkes_game' });
   const r = row(id);
-  if (r && r.owner !== a.owner) throw new NetError(`"${id}" is in another account`, { status: 409 });
+  if (r && r.owner !== a.owner) throw new NetError(`"${id}" is in another account`, { code: 'project_in_other_account' });
   if (!r) {
     const now = Date.now();
     db.prepare("INSERT INTO net_projects (id, owner, name, origins, p2p, max_players, tier, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, NULL, 'paid', ?, ?)")

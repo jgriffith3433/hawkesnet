@@ -20,7 +20,7 @@ async function startNode(workers = 0) {
   const node = new NetNode({ id: 'n1', url: 'ws://x', link, workers, log: () => {} });
   await node.start();
   const server = http.createServer((req, res) => void node.http(req, res, new URL(req.url ?? '/', 'http://x').pathname));
-  server.on('upgrade', (req, socket, head) => (new URL(req.url ?? '/', 'http://x').pathname === '/v3' ? node.upgrade(req, socket, head) : refuse(socket, 404, 'no')));
+  server.on('upgrade', (req, socket, head) => (new URL(req.url ?? '/', 'http://x').pathname === '/v3' ? node.upgrade(req, socket, head) : refuse(socket, 'not_found')));
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
   const port = (server.address() as AddressInfo).port;
   return { node, server, port, stop: async () => { node.stop(); server.closeAllConnections(); await new Promise((r) => server.close(() => r(null))); } };
