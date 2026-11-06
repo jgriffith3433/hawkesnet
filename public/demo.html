@@ -130,7 +130,7 @@
   $('migrate').onclick = () => net.migrate('game asked');
   $('leave').onclick = async () => { for (const b of bots) await b.net.leave(); await net.leave(); log('left'); };
   $('share').onclick = () => { navigator.clipboard?.writeText(location.href); $('share').textContent = 'Copied'; setTimeout(() => ($('share').textContent = 'Copy invite link'), 1500); };
-  // Everyone is drawn inside the arena: dots clamped to it, overlapping dots pushed apart (the local player stays where it is),
+  // Everyone is drawn inside the arena: dots clamped to it, overlapping dots moved to the nearest free spot (the local player stays where it is),
   // and each name placed above or below its dot so it is never clipped at an edge or drawn over another name or dot.
   const PAD = 4, LABEL_H = 17, MIN_GAP = 4;
   const clampXY = (it) => { it.x = Math.max(it.r + PAD, Math.min(W - it.r - PAD, it.x)); it.y = Math.max(it.r + PAD, Math.min(H - it.r - PAD, it.y)); };
@@ -145,18 +145,25 @@
     }
     items.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.id < b.id ? -1 : 1));
     items.forEach(clampXY);
-    for (let pass = 0; pass < 8; pass++) {
-      for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
-        const a = items[i], b = items[j], min = a.r + b.r + MIN_GAP;
-        let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
-        if (d >= min) continue;
-        if (d < 0.01) { const ang = j * 2.4; dx = Math.cos(ang); dy = Math.sin(ang); d = 1; }
-        const push = (min - d) / (a.me ? 1 : 2);
-        const ux = dx / d, uy = dy / d;
-        if (!a.me) { a.x -= ux * push; a.y -= uy * push; }
-        b.x += ux * push; b.y += uy * push;
-        clampXY(a); clampXY(b);
+    // Dots are placed one by one (this player first, where it is): a dot that would touch one already placed goes to the
+    // nearest free spot around it, on rings of growing radius, inside the arena. Pushing pairs apart could not do this in
+    // a corner (the walls pushed them back together), this always finds a spot while the arena has room.
+    const dots = [];
+    const free = (it, x, y) => dots.every((o2) => Math.hypot(o2.x - x, o2.y - y) >= o2.r + it.r + MIN_GAP);
+    const inside = (it, x, y) => x >= it.r + PAD && x <= W - it.r - PAD && y >= it.r + PAD && y <= H - it.r - PAD;
+    for (const it of items) {
+      if (!free(it, it.x, it.y)) {
+        const start = Math.atan2(H / 2 - it.y, W / 2 - it.x); // try towards the middle first
+        search: for (let rad = 4; rad < Math.max(W, H); rad += 4) {
+          const steps = Math.max(8, Math.ceil((2 * Math.PI * rad) / 6));
+          for (let k = 0; k < steps; k++) {
+            const ang = start + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * ((2 * Math.PI) / steps);
+            const x = it.x + Math.cos(ang) * rad, y = it.y + Math.sin(ang) * rad;
+            if (inside(it, x, y) && free(it, x, y)) { it.x = x; it.y = y; break search; }
+          }
+        }
       }
+      dots.push(it);
     }
     const placed = [];
     for (const it of items) {
