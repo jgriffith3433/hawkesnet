@@ -171,22 +171,24 @@
       while (text.length > 3 && g.measureText(text).width > 150) text = `${text.slice(0, -2)}…`;
       it.text = text;
       const w = g.measureText(text).width + 6, h = LABEL_H;
-      const bases = [it.y - it.r - 5, it.y + it.r + 14, it.y - it.r - 5 - h, it.y + it.r + 14 + h];
+      // Candidates: above, below, then further rows up and down, each also shifted sideways; the first that touches no name and no dot wins.
+      // When every one is taken (a crowd), the cheapest wins, the one with the fewest collisions.
+      const cands = [];
+      for (let row = 0; row < 14; row++) for (const side of [-1, 1]) for (const shift of [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5]) cands.push({ base: side < 0 ? it.y - it.r - 5 - row * h : it.y + it.r + 14 + row * h, dx: shift * (w / 2 + 2), cost: row * 2 + Math.abs(shift) + (side < 0 ? 0 : 1) });
       let best = null, bestScore = Infinity;
-      for (const base of bases) {
-        const cx = Math.max(PAD + w / 2, Math.min(W - PAD - w / 2, it.x));
-        const top = Math.max(PAD, Math.min(H - PAD - h, base - 13));
+      for (const c of cands) {
+        const cx = Math.max(PAD + w / 2, Math.min(W - PAD - w / 2, it.x + c.dx));
+        const top = Math.max(PAD, Math.min(H - PAD - h, c.base - 13));
         const box = { x: cx, base: top + 13, top, w, h };
-        const hit = (l, r2) => !(box.x - w / 2 >= l.x + l.w / 2 || box.x + w / 2 <= l.x - l.w / 2 || box.top >= l.top + l.h || box.top + h <= l.top);
-        let score = 0;
+        const hit = (l) => !(box.x - w / 2 >= l.x + l.w / 2 || box.x + w / 2 <= l.x - l.w / 2 || box.top >= l.top + l.h || box.top + h <= l.top);
+        let score = c.cost;
         for (const l of placed) if (hit(l)) score += 100;
         for (const o2 of items) {
           const nx = Math.max(box.x - w / 2, Math.min(o2.x, box.x + w / 2)), ny = Math.max(box.top, Math.min(o2.y, box.top + h));
           if (Math.hypot(o2.x - nx, o2.y - ny) < o2.r) score += 50;
         }
-        score += bases.indexOf(base);
         if (score < bestScore) { bestScore = score; best = box; }
-        if (score < 4) break;
+        if (score < 40) break;
       }
       it.label = best; placed.push(best);
     }

@@ -54,3 +54,21 @@ test('walking along the edge into a parked corner, every frame keeps dots apart 
   for (let x = 480; x >= 15; x -= 5) assert.deepEqual(problems(draw([x, 15], parked)), [], `me at ${x},15`);
   for (let y = 15; y <= 585; y += 5) assert.deepEqual(problems(draw([15, y], parked)), [], `me at 15,${y}`);
 });
+
+test('names never overlap each other, in corners, on edges and in a crowd', () => {
+  const cases: [string, Spot, Spot[]][] = [
+    ['all on the top-left corner', [15, 15], [[15, 15], [15, 15]]],
+    ['bottom-right corner', [945, 585], [[945, 585], [945, 585], [940, 580]]],
+    ['all in the middle', [480, 300], Array.from({ length: 5 }, () => [480, 300] as Spot)],
+    ['a crowd in a corner', [15, 15], Array.from({ length: 30 }, () => [0, 0] as Spot)],
+    ['a row along the top edge', [100, 15], Array.from({ length: 8 }, (_, i) => [100 + i * 20, 15] as Spot)],
+  ];
+  for (const [name, me, others] of cases) {
+    const items = draw(me, others), bad: string[] = [];
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const a = items[i].label, b = items[j].label;
+      if (a.x - a.w / 2 < b.x + b.w / 2 && a.x + a.w / 2 > b.x - b.w / 2 && a.top < b.top + b.h && a.top + a.h > b.top) bad.push(`${items[i].text}/${items[j].text}`);
+    }
+    assert.deepEqual(bad, [], name);
+  }
+});
