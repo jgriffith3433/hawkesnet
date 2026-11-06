@@ -48,3 +48,9 @@ test('this player stays where it is; the others move away', () => {
   const me = items.find((i) => i.me);
   assert.deepEqual([me.x, me.y], [15, 15]);
 });
+
+test('walking along the edge into a parked corner, every frame keeps dots apart and names inside', () => {
+  const parked: Spot[] = [[0, 0], [-80, -80], [15, 15]];
+  for (let x = 480; x >= 15; x -= 5) assert.deepEqual(problems(draw([x, 15], parked)), [], `me at ${x},15`);
+  for (let y = 15; y <= 585; y += 5) assert.deepEqual(problems(draw([15, y], parked)), [], `me at 15,${y}`);
+});
