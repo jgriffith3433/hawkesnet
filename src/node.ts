@@ -1,3 +1,4 @@
+import { errorBody, errorStatus, type ErrorCode } from './errors.ts';
 // A Hawkes Net relay node (docs/net.md "Hosting"): one process that takes WebSocket connections for rooms and, on a
 // machine with more than one core, hands each socket to the worker process that owns its room (rooms are pinned to a
 // worker by a hash of the room key, so a room is always in one place and workers never talk to each other).
@@ -136,12 +137,12 @@ export class NetNode {
   /** A WebSocket upgrade (the caller already matched the path). */
   upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer) {
     const url = new URL(req.url ?? '/', 'http://node');
-    if (this.draining) return refuse(socket, 503, 'This node is draining; ask for a new ticket');
+    if (this.draining) return refuse(socket, 'node_draining', 'This node is draining; ask for a new ticket');
     if (!this.workers.length) return this.rooms!.upgrade(req.headers, url, socket, head);
     const key = roomKeyOf(url);
-    if (!key) return refuse(socket, 401, 'A ticket (t=) or resume token (r=) is needed');
+    if (!key) return refuse(socket, 'ws_ticket_required', 'A ticket (t=) or resume token (r=) is needed');
     const w = this.workers[hash(key) % this.workers.length];
-    if (!w.alive) return refuse(socket, 503, 'Restarting; try again in a second');
+    if (!w.alive) return refuse(socket, 'node_restarting', 'Restarting; try again in a second');
     // The socket goes to the worker that owns the room; this process forgets it.
     (socket as any).pause?.();
     w.proc.send({ t: 'up', headers: req.headers, url: url.pathname + url.search, head: head.length ? head.toString('base64') : '' }, socket as any, { keepOpen: false } as any, (err) => { if (err) { try { socket.destroy(); } catch {} } });
@@ -151,9 +152,9 @@ export class NetNode {
   async publish(token: string, body: any) {
     if (!this.workers.length) return this.rooms!.publish(token, body);
     const p = peekToken<{ prj: string; room: string }>(token);
-    if (!p) return { ok: false, status: 400, error: 'Bad token' };
+    if (!p) return { ok: false, status: 400, code: 'publish_token_bad', error: 'Bad token' };
     const w = this.workers[hash(`${p.prj}/${p.room}`) % this.workers.length];
-    return (await this.ask(w, { t: 'publish', token, body })) ?? { ok: false, status: 503, error: 'Worker not answering' };
+    return (await this.ask(w, { t: 'publish', token, body })) ?? { ok: false, status: 503, code: 'node_not_answering', error: 'Worker not answering' };
   }
 
   async summary() {
@@ -214,19 +215,20 @@ export class NetNode {
   /** The node's own HTTP routes: /healthz, /stats, POST /publish (Gen's world edits and events, a signed token). */
   async http(req: http.IncomingMessage, res: http.ServerResponse, route: string) {
     const send = (status: number, body: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); };
+    const fail = (code: ErrorCode, message?: string) => send(errorStatus(code), errorBody(code, message));
     if (route.endsWith('/healthz')) return send(this.draining ? 503 : 200, { ok: !this.draining, node: this.o.id, version: VERSION });
     if (route.endsWith('/stats')) return send(200, await this.stats());
     if (route.endsWith('/publish') && req.method === 'POST') {
       const chunks: Buffer[] = [];
       let size = 0;
-      for await (const c of req) { size += c.length; if (size > 1024 * 1024) return send(413, { error: 'Too big' }); chunks.push(c); }
+      for await (const c of req) { size += c.length; if (size > 1024 * 1024) return fail('body_too_large', 'Too big'); chunks.push(c); }
       let body: any = {};
-      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return send(400, { error: 'Not JSON' }); }
+      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return fail('bad_json', 'Not JSON'); }
       const token = String(req.headers.authorization ?? '').replace(/^Bearer\s+/, '');
       const r: any = await this.publish(token, body);
-      return send(r.ok ? 200 : r.status ?? 400, r);
+      return r.ok ? send(200, r) : fail(r.code ?? 'publish_refused', r.error);
     }
-    return send(404, { error: 'Not found' });
+    return fail('not_found');
   }
 }
 
@@ -245,11 +247,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   await node.start();
   const server = http.createServer((req, res) => {
     const route = new URL(req.url ?? '/', 'http://x').pathname;
-    node.http(req, res, route).catch((e) => { if (!res.headersSent) res.writeHead(500); res.end(String(e?.message ?? e)); });
+    node.http(req, res, route).catch((e) => { if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(errorBody('internal'))); });
   });
   server.on('upgrade', (req, socket, head) => {
     const route = new URL(req.url ?? '/', 'http://x').pathname;
-    if (route !== '/v3' && route !== '/v1/net/ws') return refuse(socket, 404, 'Not found');
+    if (route !== '/v3' && route !== '/v1/net/ws') return refuse(socket, 'not_found');
     node.upgrade(req, socket, head);
   });
   server.keepAliveTimeout = 75_000;

@@ -1,3 +1,4 @@
+import { errorBody, errorStatus, type ErrorCode } from './errors.ts';
 // A WebSocket server (RFC 6455) with no dependencies, for Hawkes Net's relay nodes: text and binary frames,
 // fragmented messages, ping/pong, close, a size limit, a subprotocol, slow-client detection, and one heartbeat sweep for
 // every socket of the process (not a timer each: a node holds thousands). Adapted from hawkesgen.ai's src/ws.ts.
@@ -53,7 +54,7 @@ export function accept(headers: Headers, raw: Duplex, head: Uint8Array | null, o
   const h = (k: string) => { const v = headers[k]; return Array.isArray(v) ? v[0] : v; };
   const key = h('sec-websocket-key');
   if (String(h('upgrade') ?? '').toLowerCase() !== 'websocket' || typeof key !== 'string' || !key) {
-    try { raw.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); } catch {}
+    refuse(raw, 'ws_handshake_invalid');
     return null;
   }
   const offered = String(h('sec-websocket-protocol') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -170,7 +171,9 @@ function header(op: number, len: number) {
 function frame(op: number, payload: Buffer) { return Buffer.concat([header(op, payload.length), payload]); }
 
 /** Refuses an upgrade with an HTTP status before any WebSocket exists. */
-export function refuse(raw: Duplex, status: number, why: string) {
-  const text = { 400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict', 429: 'Too Many Requests', 503: 'Service Unavailable' }[status] ?? 'Error';
-  try { raw.end(`HTTP/1.1 ${status} ${text}\r\nContent-Type: text/plain\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(why)}\r\n\r\n${why}`); } catch {}
+export function refuse(raw: Duplex, code: ErrorCode, message?: string) {
+  const status = errorStatus(code);
+  const text = { 400: 'Bad Request', 410: 'Gone', 401: 'Unauthorized', 403: 'Forbidden', 404: 'Not Found', 409: 'Conflict', 429: 'Too Many Requests', 503: 'Service Unavailable' }[status] ?? 'Error';
+  const body = JSON.stringify(errorBody(code, message));
+  try { raw.end(`HTTP/1.1 ${status} ${text}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`); } catch {}
 }

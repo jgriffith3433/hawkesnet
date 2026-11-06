@@ -14,6 +14,7 @@ or peer to peer, and the same SDK runs a peer-to-peer host's room in its page.
 | `deploy/` | The box: `setup.mjs` (one-time, from J's PC), systemd units, Caddy, `pull.mjs` (it deploys itself from main) |
 | `tools/` | `net-dev.mjs` (the service on this PC), `net-load.mjs` (the load test) |
 | `docs/net.md` | The design and what is built |
+| `docs/errors.md` | Every error code (made from `src/errors.ts`; the live page is `/docs/errors`) |
 
 ```bash
 npm install          # only TypeScript, for the typecheck: the service has no runtime dependencies

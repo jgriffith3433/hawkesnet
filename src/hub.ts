@@ -20,6 +20,7 @@ import * as svc from './service.ts';
 import * as projects from './projects.ts';
 import * as api from './api.ts';
 import { refuse } from './ws.ts';
+import { errorBody, errorsHtml } from './errors.ts';
 import type { Client } from './store.ts';
 
 export type HubOptions = {
@@ -136,6 +137,11 @@ export async function startHub(o: HubOptions = {}) {
       return void res.end(fs.readFileSync(route === '/' && !dashHost ? landing : dashboard));
     }
     // The demo: dots in a room, peer to peer, then the relay (open it in two tabs).
+    // The error codes (src/errors.ts, docs/errors.md): every error's `docs` link points here.
+    if (route === '/docs/errors') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(errorsHtml());
+    }
     if (route === '/demo') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(demo));
@@ -145,12 +151,12 @@ export async function startHub(o: HubOptions = {}) {
       return void res.end(fs.readFileSync(demoPlaytest));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end('{"error":"Not found"}');
+    res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(errorBody('not_found')));
   });
   server.on('upgrade', (req, socket, head) => {
     const route = new URL(req.url ?? '/', 'http://x').pathname;
-    if (route !== '/v1/net/ws' && route !== '/v3') return refuse(socket, 404, 'Not found');
+    if (route !== '/v1/net/ws' && route !== '/v3') return refuse(socket, 'not_found');
     node.upgrade(req, socket, head);
   });
   server.keepAliveTimeout = 75_000;
