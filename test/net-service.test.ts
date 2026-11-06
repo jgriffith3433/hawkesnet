@@ -5,6 +5,10 @@
 // and usage handed on (the box sends it to Gen).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
 
 const { startTestHub, addKey } = await import('./helper.ts');
 // @ts-ignore: plain JS SDK
@@ -576,6 +580,32 @@ test('an option given as undefined keeps its default: endpoint: undefined goes t
     const a = await join('undef1', opts({ name: 'Ada', transport: 'relay', endpoint: undefined, role: undefined }));
     try { assert.equal(a.transport, 'relay'); } finally { await a.leave(); }
   } finally { delete (globalThis as any).HAWKES_NET_ENDPOINT; }
+});
+
+test('the quickstart: linked from the landing page, and its first-room script really puts two clients in one room', async () => {
+  const root = await fetch(`${endpoint}/`).then((r) => r.text());
+  const hrefs = [...root.matchAll(/href="(\/quickstart)"/g)];
+  assert.ok(hrefs.length >= 3, 'the landing page links to the quickstart (nav, button, footer)');
+  const res = await fetch(`${endpoint}/quickstart`);
+  assert.equal(res.status, 200);
+  const page = await res.text();
+  assert.doesNotMatch(page, /setInterval/, 'no polling');
+  // every in-page link resolves, and every service path it links to answers
+  const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
+  for (const m of page.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.has(m[1]), `#${m[1]} exists`);
+  for (const p of new Set([...page.matchAll(/href="(\/[^"#]*)/g)].map((m) => m[1]))) assert.equal((await fetch(`${endpoint}${p}`)).status, 200, p);
+  // run the doc's own script, against this service, and check it prints what the doc says it prints
+  const code = /<pre id="script-node"><code>([\s\S]*?)<\/code><\/pre>/.exec(page)![1].replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+  const doc = /<b>You should see<\/b> \(the last three[\s\S]*?<pre><code>([\s\S]*?)<\/code><\/pre>/.exec(page)![1].trim().split('\n');
+  const key = addKey('quickstart', ['*']);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hn-qs-'));
+  const file = path.join(dir, 'first-room.mjs');
+  const sdk = new URL('../sdk/js/hawkes-net.mjs', import.meta.url).href;
+  fs.writeFileSync(file, code.replace("'@hawkesgen/net'", `'${sdk}'`).replace('key: process.env.HAWKESGEN_KEY', `endpoint: '${endpoint}', key: process.env.HAWKESGEN_KEY`));
+  const out = await new Promise<string>((ok, no) => execFile(process.execPath, [file], { env: { ...process.env, HAWKESGEN_KEY: key }, timeout: 20_000 }, (e, so, se) => (e ? no(new Error(se)) : ok(so))));
+  const got = out.trim().split('\n');
+  assert.deepEqual(got.slice(0, 2), doc.slice(0, 2));
+  assert.deepEqual(got.slice(2).sort(), doc.slice(2).sort());
 });
 
 test('the root is a public landing page with status and the three SDKs; the dashboard keeps its own names and /dashboard', async () => {

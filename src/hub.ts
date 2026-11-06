@@ -112,6 +112,7 @@ export async function startHub(o: HubOptions = {}) {
   // Hawkes Studio's playtest bot for the demo (window.hawkesPlaytest: two players meet, move, message, leave).
   const demoPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
+  const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
   // What this process runs: the repo and its commit (from .git, read once), so a deploy can be seen from outside.
   const build = (() => {
@@ -141,6 +142,11 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/docs/errors') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(errorsHtml());
+    }
+    // The quickstart: ten minutes from a free account to two clients in one room (public/quickstart.html).
+    if (route === '/quickstart') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(quickstart));
     }
     if (route === '/demo') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
