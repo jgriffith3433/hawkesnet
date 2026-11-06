@@ -9,7 +9,7 @@ or peer to peer, and the same SDK runs a peer-to-peer host's room in its page.
 | `src/` | The service (`hub.ts`: tickets, directory, keys, publish, status, the SDK files, its relay node), the relay node (`node.ts`, `rooms.ts`, `worker.ts`, `ws.ts`), tickets (`tickets.ts`, Ed25519), projects and accounts (`projects.ts`, `registry.ts`), records (`records.ts`), the Unity package download (`tarball.ts`), settings (`store.ts`, `NET_*`) |
 | `sdk/js/` | The client SDK, published as **`@hawkesgen/net`** (MIT): `hawkes-net.mjs` (join, lobby, background), `hawkes-net-core.mjs` (the room and the binary protocol: the relay runs the same file), `hawkes-net.d.ts` |
 | `sdk/unity/com.hawkes.net/` | A copy of the Unity package from [hawkesnet-unity](https://github.com/jgriffith3433/hawkesnet-unity) (its home), for the download at `/sdk/com.hawkes.net.tgz` and the WebGL bridge's test |
-| `public/` | net.hawkesgen.ai's pages: the developer dashboard (`dashboard.html`) and the demo (`demo.html`) |
+| `public/` | net.hawkesgen.ai's pages: the landing page, the 10-minute quickstart (`quickstart.html`, `/quickstart`), the developer dashboard (`dashboard.html`) and the demo (`demo.html`) |
 | `projects.json` | Hawkes's own games' room shapes and limits |
 | `deploy/` | The box: `setup.mjs` (one-time, from J's PC), systemd units, Caddy, `pull.mjs` (it deploys itself from main) |
 | `tools/` | `net-dev.mjs` (the service on this PC), `net-load.mjs` (the load test) |
