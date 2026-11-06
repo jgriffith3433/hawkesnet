@@ -68,7 +68,7 @@
   addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) { keys.add(e.key); e.preventDefault(); } });
   addEventListener('keyup', (e) => keys.delete(e.key));
   const cv = $('c'), g = cv.getContext('2d');
-  cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = ((e.clientX - r.left) / r.width) * W; pos.y = ((e.clientY - r.top) / r.height) * H; });
+  cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); });
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again. Nothing runs unless a playtest starts.
@@ -79,6 +79,8 @@
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
     drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
+    cornerDrive: async () => { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); },
+    view: () => window.hawkesNetDemoView,
     myPos: () => [pos.x, 0, pos.y],
     shownPos: (id) => tracks.get(id)?.sample() ?? null,
     botPose: (u) => [200 + 500 * u, 0, 450],
@@ -128,26 +130,79 @@
   $('migrate').onclick = () => net.migrate('game asked');
   $('leave').onclick = async () => { for (const b of bots) await b.net.leave(); await net.leave(); log('left'); };
   $('share').onclick = () => { navigator.clipboard?.writeText(location.href); $('share').textContent = 'Copied'; setTimeout(() => ($('share').textContent = 'Copy invite link'), 1500); };
-  let last = performance.now(), lastStats = { d: 0, u: 0, t: performance.now() };
-  function frame(t) {
-    const dt = Math.min(0.05, (t - last) / 1000); last = t;
-    const sp = 260 * dt;
-    if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
-    pos.x = Math.max(10, Math.min(W - 10, pos.x)); pos.y = Math.max(10, Math.min(H - 10, pos.y));
-    net.pose([pos.x, 0, pos.y], 0);
-    for (const b of bots) { b.a += (Math.random() - 0.5) * 0.3; b.x += Math.cos(b.a) * 120 * dt; b.y += Math.sin(b.a) * 120 * dt; if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a; b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y)); b.net.pose([b.x, 0, b.y], 0); }
-    g.clearRect(0, 0, W, H);
-    g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
+  // Everyone is drawn inside the arena: dots clamped to it, overlapping dots pushed apart (the local player stays where it is),
+  // and each name placed above or below its dot so it is never clipped at an edge or drawn over another name or dot.
+  const PAD = 4, LABEL_H = 17, MIN_GAP = 4;
+  const clampXY = (it) => { it.x = Math.max(it.r + PAD, Math.min(W - it.r - PAD, it.x)); it.y = Math.max(it.r + PAD, Math.min(H - it.r - PAD, it.y)); };
+  function layout() {
+    const items = [{ id: net.id, me: true, x: pos.x, y: pos.y, r: 11, color: net.color || '#2f6fed', text: net.name || 'You' }];
     for (const [id, tr] of tracks) {
       const pr = net.peers.get(id);
       if (!pr) { tracks.delete(id); continue; }
       const s = tr.sample();
       if (!s) continue;
-      g.fillStyle = pr.color || '#888'; g.beginPath(); g.arc(s[0], s[2], 9, 0, 7); g.fill();
-      g.fillStyle = getComputedStyle(document.body).color; g.fillText(pr.name || id, s[0], s[2] - 14);
+      items.push({ id, me: false, x: s[0], y: s[2], r: 9, color: pr.color || '#888', text: pr.name || id });
     }
-    g.fillStyle = net.color || '#2f6fed'; g.beginPath(); g.arc(pos.x, pos.y, 11, 0, 7); g.fill();
-    g.strokeStyle = getComputedStyle(document.body).color; g.lineWidth = 2; g.stroke();
+    items.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.id < b.id ? -1 : 1));
+    items.forEach(clampXY);
+    for (let pass = 0; pass < 8; pass++) {
+      for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+        const a = items[i], b = items[j], min = a.r + b.r + MIN_GAP;
+        let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+        if (d >= min) continue;
+        if (d < 0.01) { const ang = j * 2.4; dx = Math.cos(ang); dy = Math.sin(ang); d = 1; }
+        const push = (min - d) / (a.me ? 1 : 2);
+        const ux = dx / d, uy = dy / d;
+        if (!a.me) { a.x -= ux * push; a.y -= uy * push; }
+        b.x += ux * push; b.y += uy * push;
+        clampXY(a); clampXY(b);
+      }
+    }
+    const placed = [];
+    for (const it of items) {
+      let text = it.text;
+      while (text.length > 3 && g.measureText(text).width > 150) text = `${text.slice(0, -2)}…`;
+      it.text = text;
+      const w = g.measureText(text).width + 6, h = LABEL_H;
+      const bases = [it.y - it.r - 5, it.y + it.r + 14, it.y - it.r - 5 - h, it.y + it.r + 14 + h];
+      let best = null, bestScore = Infinity;
+      for (const base of bases) {
+        const cx = Math.max(PAD + w / 2, Math.min(W - PAD - w / 2, it.x));
+        const top = Math.max(PAD, Math.min(H - PAD - h, base - 13));
+        const box = { x: cx, base: top + 13, top, w, h };
+        const hit = (l, r2) => !(box.x - w / 2 >= l.x + l.w / 2 || box.x + w / 2 <= l.x - l.w / 2 || box.top >= l.top + l.h || box.top + h <= l.top);
+        let score = 0;
+        for (const l of placed) if (hit(l)) score += 100;
+        for (const o2 of items) {
+          const nx = Math.max(box.x - w / 2, Math.min(o2.x, box.x + w / 2)), ny = Math.max(box.top, Math.min(o2.y, box.top + h));
+          if (Math.hypot(o2.x - nx, o2.y - ny) < o2.r) score += 50;
+        }
+        score += bases.indexOf(base);
+        if (score < bestScore) { bestScore = score; best = box; }
+        if (score < 4) break;
+      }
+      it.label = best; placed.push(best);
+    }
+    return items;
+  }
+  let last = performance.now(), lastStats = { d: 0, u: 0, t: performance.now() };
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    const sp = 260 * dt;
+    if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
+    pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
+    net.pose([pos.x, 0, pos.y], 0);
+    for (const b of bots) { b.a += (Math.random() - 0.5) * 0.3; b.x += Math.cos(b.a) * 120 * dt; b.y += Math.sin(b.a) * 120 * dt; if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a; b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y)); b.net.pose([b.x, 0, b.y], 0); }
+    g.clearRect(0, 0, W, H);
+    g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
+    const ink = getComputedStyle(document.body).color;
+    const items = layout();
+    for (const it of items) {
+      g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r, 0, 7); g.fill();
+      if (it.me) { g.strokeStyle = ink; g.lineWidth = 2; g.stroke(); }
+      if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
+    }
+    window.hawkesNetDemoView = { w: W, h: H, items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })) };
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

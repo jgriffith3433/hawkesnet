@@ -5,6 +5,7 @@
 //   smoke        this page's player and a second player the bot opens in this same page meet in one room on the page's
 //                Hawkes Net, see each other move (this page's player moved by real input), trade messages both ways,
 //                and the second one leaves. One browser is enough, so every playtest is a real two-player check.
+//   arena        names and dots stay inside the arena and players on one spot are drawn apart (needs o.view and o.cornerDrive).
 //   two-players  two (or more) real browsers on one ?room= (Studio's peers playtest) find each other, move, and trade
 //                messages.
 //
@@ -31,6 +32,8 @@ export function installNetPlaytest(o) {
       description: 'Connects to the page\'s Hawkes Net, opens a second player in the same room, checks poses both ways (this page\'s player moved by real input), messages both ways, and the second player leaving.' },
     { id: 'two-players', title: 'Real browsers on one ?room= find each other, move and message', seconds: 75, tags: ['full', 'multiplayer'],
       description: 'Run with Studio peers 2-4: each browser waits for another player in its ?room=, moves by real input, checks it sees the other move and that messages go both ways.' },
+    { id: 'arena', title: 'Names and dots stay inside the arena, and players on one spot stay apart', seconds: 60, tags: ['full'],
+      description: 'Moves this page\'s player into the top-left corner by real arrow keys, sends a second player to the opposite corner, outside the arena, and onto this player\'s spot, and checks every dot and name is drawn inside the arena and no two dots overlap.' },
   ];
   const STALL = 60;
   let run = null;
@@ -191,6 +194,70 @@ export function installNetPlaytest(o) {
     finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
   }
 
+  /** Arena: every drawn dot and name is inside the arena, and no two dots overlap (o.view() gives what the page drew). */
+  async function arena() {
+    let main = o.main();
+    if (!o.view || !o.cornerDrive) { problem('bug', 'this page has no arena view to check'); return finish('error'); }
+    const okConnect = await check(`Connected to ${o.where ?? 'Hawkes Net'}`, async () => {
+      await until(() => { main = o.main(); if (main) wire(main, 'main'); return isOnline(main); }, 20000, 'the room to say online');
+      return main.id;
+    });
+    if (!okConnect) return finish('lost');
+    bot = await o.openBot(); wire(bot, 'bot');
+    const bot2 = await o.openBot(); wire(bot2, 'bot2');
+    try {
+      await until(() => isOnline(bot) && isOnline(bot2) && main.peers.has(bot.id) && main.peers.has(bot2.id), 15000, 'both extra players to join');
+      const sendTo = (b, p) => { b.pose(p, 0); };
+      // A name's box inside [0,w]x[0,h], every dot inside too, no two dots closer than their radii.
+      const audit = () => {
+        const v = o.view();
+        if (!v) throw new Error('the page has drawn nothing yet');
+        const clipped = [], touching = [];
+        for (const it of v.items) {
+          if (it.x - it.r < 0 || it.y - it.r < 0 || it.x + it.r > v.w || it.y + it.r > v.h) clipped.push(`dot ${it.label?.text ?? it.id}`);
+          const l = it.label;
+          if (!l) clipped.push(`no name for ${it.id}`);
+          else if (l.x < 0 || l.y < 0 || l.x + l.w > v.w || l.y + l.h > v.h) clipped.push(`name ${l.text}`);
+        }
+        for (let i = 0; i < v.items.length; i++) for (let j = i + 1; j < v.items.length; j++) {
+          const a = v.items[i], b = v.items[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (d < a.r + b.r) touching.push(`${a.label?.text ?? a.id}/${b.label?.text ?? b.id} ${Math.round(d)}px`);
+        }
+        return { v, clipped, touching };
+      };
+      await check('A player pushed to the top-left corner by the arrow keys keeps their name inside', async () => {
+        sendTo(bot, [-80, 0, -80]); sendTo(bot2, [2000, 0, 2000]);
+        await o.cornerDrive();
+        await until(() => { const a = audit(); return a.v.items.length >= 3 && a.v.items.every((i) => i.me || (i.x > 400 || i.y > 300)); }, 6000, 'the far corner players to show');
+        const a = audit(); event('arena', `${a.v.items.length} drawn, ${a.clipped.length} clipped`);
+        if (a.clipped.length) throw new Error(`clipped at an edge: ${a.clipped.join(', ')}`);
+        const me = a.v.items.find((i) => i.me);
+        return `${a.v.items.length} players drawn, me at ${Math.round(me.x)},${Math.round(me.y)}, none clipped`;
+      });
+      await check('Two players sent outside the arena are drawn at its edge, names inside', async () => {
+        const a = audit();
+        if (a.clipped.length) throw new Error(`clipped: ${a.clipped.join(', ')}`);
+        return 'both inside';
+      });
+      await check('Players on the same spot are drawn visibly apart', async () => {
+        const me = o.myPos();
+        sendTo(bot, me.slice()); sendTo(bot2, me.slice());
+        await until(() => { const a = audit(); return a.v.items.length >= 3 && a.v.items.filter((i) => Math.hypot(i.x - me[0], i.y - me[2]) < 60).length >= 3; }, 6000, 'the players to arrive on this spot');
+        await wait(600);
+        const a = audit(); event('arena', `${a.touching.length} touching, ${a.clipped.length} clipped`);
+        if (a.touching.length) throw new Error(`still overlapping: ${a.touching.join(', ')}`);
+        if (a.clipped.length) throw new Error(`clipped: ${a.clipped.join(', ')}`);
+        const min = Math.min(...a.v.items.flatMap((x, i) => a.v.items.slice(i + 1).map((y) => Math.hypot(x.x - y.x, x.y - y.y))));
+        metric('minGapPx', Math.round(min));
+        return `closest two dots ${Math.round(min)} px apart, names inside`;
+      });
+    } finally {
+      try { await bot2.leave(); } catch { /* gone */ }
+    }
+    progress(1);
+    finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
+  }
+
   async function twoPlayers() {
     let main = o.main();
     const room = new URLSearchParams(location.search).get('room');
@@ -247,7 +314,7 @@ export function installNetPlaytest(o) {
       event('start', id); event('scene', 'Demo'); show();
       try {
         if (!sc) { problem('bug', `no playtest scenario "${id}" (have: ${scenarios.map((s) => s.id).join(', ')})`); return finish('error'); }
-        await (id === 'two-players' ? twoPlayers() : smoke());
+        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : smoke());
       } catch (e) {
         if (mine === run && !mine.done) { problem('bug', `bot error: ${e?.message ?? e}`); log(String(e?.stack ?? e)); finish('error'); }
       } finally {
