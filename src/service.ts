@@ -358,7 +358,10 @@ export function status() {
   const now = Date.now();
   const ns = nodes().map((n) => ({ id: n.id, url: n.url, region: n.region, status: live(n, now) ? n.status : 'down', players: n.players, capacity: n.capacity, load: n.load, rooms: n.rooms, version: n.version, workers: n.workers, embedded: Boolean(n.embedded), beatAgoMs: now - n.beat_at }));
   const rooms = db.prepare("SELECT project, transport, COUNT(*) AS rooms, COALESCE(SUM(players), 0) AS players FROM net_rooms WHERE seen_at > ? GROUP BY project, transport").all(now - 10 * 60_000);
-  return { version: NET_VERSION, protocol: PROTOCOL, up: ns.some((n) => n.status === 'up'), nodes: ns, rooms };
+  const upCount = ns.filter((n) => n.status === 'up').length;
+  // ok: every node up; degraded: some up, some not (still serving); down: none up.
+  const health = upCount === 0 ? 'down' : upCount === ns.length ? 'ok' : 'degraded';
+  return { version: NET_VERSION, protocol: PROTOCOL, up: upCount > 0, health, nodes: ns, rooms };
 }
 
 // ------------------------------------------------------------------ this process's relay node
