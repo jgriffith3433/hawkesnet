@@ -33,8 +33,8 @@
     <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
     <div class="row">
       <button class="primary" id="share">Copy invite link</button>
-      <button id="bots">Add 5 bots</button>
-      <button id="migrate">Move to the relay</button>
+      <button id="bots" disabled>Add 5 bots</button>
+      <button id="migrate" disabled>Move to the relay</button>
       <button id="leave">Leave</button>
     </div>
   </section>
@@ -70,57 +70,37 @@
   const cv = $('c'), g = cv.getContext('2d');
   cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); });
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
-  // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
-  // On p2p the smoke also moves the room to the relay and checks again. Nothing runs unless a playtest starts.
+  // Joining starts first and alone: the ticket and the socket don't wait for the playtest bot's file (they used to, one after the other).
+  // `joinInfo` is what the playtest's "join" scenario reads: how long the join took, what the arena said, and which buttons were off until then.
   let net = null;
-  const { installNetPlaytest } = await import('/demo-playtest.mjs');
-  const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
-  installNetPlaytest({
-    product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
-    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
-    drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
-    cornerDrive: async () => { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); },
-    view: () => window.hawkesNetDemoView,
-    myPos: () => [pos.x, 0, pos.y],
-    shownPos: (id) => tracks.get(id)?.sample() ?? null,
-    botPose: (u) => [200 + 500 * u, 0, 450],
-    tolerance: 8,
-    extra: async ({ check, main, bot, until, metric, roundTrips }) => {
-      metric('p2p', main.transport === 'p2p' ? 1 : 0);
-      if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));
-      await check('The peer to peer link opened and the room stayed peer to peer', async () => {
-        const ms = await until(() => main.transport !== 'p2p' || main.peers.get(bot.id)?.route === 'direct' || bot.peers.get(main.id)?.route === 'direct', 7000, () => `the WebRTC data channel to open (routes ${main.peers.get(bot.id)?.route}/${bot.peers.get(main.id)?.route}${main.linkFailure || bot.linkFailure ? `, ${main.linkFailure || bot.linkFailure}` : ''})`);
-        if (main.transport !== 'p2p') throw new Error(`the room fell to ${main.transport} before a link opened: ${main.linkFailure || bot.linkFailure || 'no reason given'}`);
-        metric('linkMs', Math.round(ms));
-        return `direct link after ${Math.round(ms)} ms`;
-      });
-      await check('The room moves from peer to peer to the relay and still works', async () => {
-        main.migrate('playtest');
-        const ms = await until(() => main.transport === 'relay' && bot.transport === 'relay' && main.peers.has(bot.id), 15000, () => `both players on the relay (now ${main.transport} / ${bot.transport})`);
-        metric('migrateMs', Math.round(ms));
-        const rtt = await roundTrips(main, 'main', bot.id);
-        metric('relayRttMs', rtt);
-        return `moved in ${Math.round(ms)} ms, round trip ${rtt} ms`;
-      });
-    },
-  });
-  net = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
-  window.hawkesNetDemo = net;
-  log(`joined as ${net.id} (${net.transport})`);
-  // One short sentence in the log; the ICE/data channel detail (net.linkFailure) is already in the console (the SDK warns) and is repeated there.
-  net.when('transport', (e) => {
-    if (e.why === 'links failed') { log("Couldn't connect directly, switched to relay"); console.info('[hawkes-net demo] direct link failed:', net.linkFailure || 'no reason given'); }
-    else log(`room moved: ${e.from} -> ${e.to} (${e.why})`);
-  });
-  net.when('peer:join', (p) => log(`${p.name || p.id} joined`));
-  net.when('peer:leave', (e) => log(`${e.peer.name || e.peer.id} left (${e.reason})`));
-  net.when('host', (e) => log(`host is now ${e.host}`));
-  net.when('problem', (e) => log(`problem: ${e.code} ${e.detail}`));
+  const joinInfo = { ms: null, text: '', botsOff: null, migrateOff: null, failed: '' };
+  const joinT0 = performance.now();
+  const joining = join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
+  joining.catch((e) => { joinInfo.failed = String(e?.message || e); }); // the arena says so (the handler below logs it)
+  // The join event: the room's first state is here. The buttons that need a room come on, the arena draws the players.
+  // (Attached at the top, so nothing else on the page, like loading the playtest bot, can hold it back.)
+  joining.then((joined) => {
+    net = joined;
+    joinInfo.ms = Math.round(performance.now() - joinT0);
+    $('bots').disabled = false; $('migrate').disabled = false;
+    window.hawkesNetDemo = net;
+    log(`joined as ${net.id} (${net.transport}) in ${joinInfo.ms} ms`);
+    // One short sentence in the log; the ICE/data channel detail (net.linkFailure) is already in the console (the SDK warns) and is repeated there.
+    net.when('transport', (e) => {
+      if (e.why === 'links failed') { log("Couldn't connect directly, switched to relay"); console.info('[hawkes-net demo] direct link failed:', net.linkFailure || 'no reason given'); }
+      else log(`room moved: ${e.from} -> ${e.to} (${e.why})`);
+    });
+    net.when('peer:join', (p) => log(`${p.name || p.id} joined`));
+    net.when('peer:leave', (e) => log(`${e.peer.name || e.peer.id} left (${e.reason})`));
+    net.when('host', (e) => log(`host is now ${e.host}`));
+    net.when('problem', (e) => log(`problem: ${e.code} ${e.detail}`));
+    net.onPose((id, s, at) => { let t = tracks.get(id); if (!t) tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] }))); t.push(at, [s.p[0], s.p[1], s.p[2]], id); });
+  }, () => { $('me').textContent = 'could not join'; log(`could not join: ${joinInfo.failed}`); });
+  const playtestFile = import('/demo-playtest.mjs'); // loads beside the join; installed at the end, nothing runs unless a playtest starts
   const tracks = new Map();
-  net.onPose((id, s, at) => { let t = tracks.get(id); if (!t) tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] }))); t.push(at, [s.p[0], s.p[1], s.p[2]], id); });
-  // Bots: more players in this page (no singleton), wandering.
   const bots = [];
   $('bots').onclick = async () => {
+    // Bots: more players in this page (no singleton), wandering.
     for (let i = 0; i < 5; i++) {
       const b = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: `Bot ${bots.length + 1}`, role: 'player', config, leaveOnHide: true, sub: `bot-${Math.random()}` });
       bots.push({ net: b, x: Math.random() * W, y: Math.random() * H, a: Math.random() * 6.28 });
@@ -128,7 +108,7 @@
     }
   };
   $('migrate').onclick = () => net.migrate('game asked');
-  $('leave').onclick = async () => { for (const b of bots) await b.net.leave(); await net.leave(); log('left'); };
+  $('leave').onclick = async () => { for (const b of bots) await b.net.leave(); await net?.leave(); log('left'); };
   $('share').onclick = () => { navigator.clipboard?.writeText(location.href); $('share').textContent = 'Copied'; setTimeout(() => ($('share').textContent = 'Copy invite link'), 1500); };
   // Everyone is drawn inside the arena: dots clamped to it, overlapping dots moved to the nearest free spot (the local player stays where it is),
   // and each name placed above or below its dot so it is never clipped at an edge or drawn over another name or dot.
@@ -194,9 +174,22 @@
     }
     return items;
   }
+  // Until the room's first state arrives the arena says so, and "Add 5 bots" and "Move to the relay" stay off (they need a room).
+  function paintJoining() {
+    g.clearRect(0, 0, W, H);
+    g.font = '20px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = getComputedStyle(document.body).color;
+    joinInfo.text = joinInfo.failed ? `Couldn't join ${room}` : `Joining ${room}…`;
+    g.fillText(joinInfo.text, W / 2, H / 2);
+    g.textBaseline = 'alphabetic';
+    if (joinInfo.botsOff === null) { joinInfo.botsOff = $('bots').disabled; joinInfo.migrateOff = $('migrate').disabled; }
+    window.hawkesNetDemoView = { w: W, h: H, items: [], joining: joinInfo.text };
+  }
+  const drawJoining = () => { paintJoining(); requestAnimationFrame(frame); };
   let last = performance.now(), lastStats = { d: 0, u: 0, t: performance.now() };
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    if (!net) return drawJoining();
     const sp = 260 * dt;
     if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
     pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
@@ -216,6 +209,7 @@
   }
   requestAnimationFrame(frame);
   setInterval(() => {
+    if (!net) return;
     const s = net.stats();
     const t = performance.now(), dts = (t - lastStats.t) / 1000;
     $('bw').textContent = `${((s.downBytes - lastStats.d) / dts / 1024).toFixed(1)} / ${((s.upBytes - lastStats.u) / dts / 1024).toFixed(1)} KB/s`;
@@ -233,6 +227,41 @@
       $('peers').appendChild(li);
     }
   }, 500);
+  if (!net) paintJoining(); // the first paint is now, not at the next frame
+  const { installNetPlaytest } = await playtestFile;
+  const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
+  // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
+  // On p2p the smoke also moves the room to the relay and checks again.
+  installNetPlaytest({
+    product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
+    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
+    drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
+    cornerDrive: async () => { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); },
+    view: () => window.hawkesNetDemoView,
+    joined: () => ({ ms: joinInfo.ms, text: joinInfo.text, botsOffWhileJoining: joinInfo.botsOff, migrateOffWhileJoining: joinInfo.migrateOff, botsOn: !$('bots').disabled, migrateOn: !$('migrate').disabled, room, failed: joinInfo.failed }),
+    myPos: () => [pos.x, 0, pos.y],
+    shownPos: (id) => tracks.get(id)?.sample() ?? null,
+    botPose: (u) => [200 + 500 * u, 0, 450],
+    tolerance: 8,
+    extra: async ({ check, main, bot, until, metric, roundTrips }) => {
+      metric('p2p', main.transport === 'p2p' ? 1 : 0);
+      if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));
+      await check('The peer to peer link opened and the room stayed peer to peer', async () => {
+        const ms = await until(() => main.transport !== 'p2p' || main.peers.get(bot.id)?.route === 'direct' || bot.peers.get(main.id)?.route === 'direct', 7000, () => `the WebRTC data channel to open (routes ${main.peers.get(bot.id)?.route}/${bot.peers.get(main.id)?.route}${main.linkFailure || bot.linkFailure ? `, ${main.linkFailure || bot.linkFailure}` : ''})`);
+        if (main.transport !== 'p2p') throw new Error(`the room fell to ${main.transport} before a link opened: ${main.linkFailure || bot.linkFailure || 'no reason given'}`);
+        metric('linkMs', Math.round(ms));
+        return `direct link after ${Math.round(ms)} ms`;
+      });
+      await check('The room moves from peer to peer to the relay and still works', async () => {
+        main.migrate('playtest');
+        const ms = await until(() => main.transport === 'relay' && bot.transport === 'relay' && main.peers.has(bot.id), 15000, () => `both players on the relay (now ${main.transport} / ${bot.transport})`);
+        metric('migrateMs', Math.round(ms));
+        const rtt = await roundTrips(main, 'main', bot.id);
+        metric('relayRttMs', rtt);
+        return `moved in ${Math.round(ms)} ms, round trip ${rtt} ms`;
+      });
+    },
+  });
 </script>
 </body>
 </html>

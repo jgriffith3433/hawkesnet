@@ -38,6 +38,8 @@ export function installNetPlaytest(o) {
       description: 'Makes the service refuse a dozen requests (an unknown route, bad JSON, a bad room, a missing key, a bot ticket, an old SDK...) and checks each answer has code, message and a docs link that matches the code, then opens the docs page and checks it lists every code the service says it has.' },
     { id: 'arena', title: 'Names and dots stay inside the arena, and players on one spot stay apart', seconds: 60, tags: ['full'],
       description: 'Moves this page\'s player into the top-left corner by real arrow keys, sends a second player to the opposite corner, outside the arena, and onto this player\'s spot, and checks every dot and name is drawn inside the arena and no two dots overlap.' },
+    { id: 'join', title: 'The demo joins its room in under 1 s, and says "Joining <room>…" until then', seconds: 30, tags: ['smoke'],
+      description: 'Reads how long this page took to join its room (from the join call to the first room state, no polling in between), what the arena said until then ("Joining" and the room name) and that "Add 5 bots" and "Move to the relay" were off until the join and are on now.' },
   ];
   const STALL = 60;
   let run = null;
@@ -194,6 +196,35 @@ export function installNetPlaytest(o) {
       return `${Math.round(ms)} ms`;
     });
     bot = null;
+    progress(1);
+    finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
+  }
+
+  /** Join: under 1 s, "Joining <room>…" in the arena until then, the buttons that need a room off until then (o.joined() gives what the page recorded). */
+  async function joinScenario() {
+    if (!o.joined) { problem('bug', 'this page has no join record to check'); return finish('error'); }
+    const JOIN_MS = 1000;
+    const done = () => { const j = o.joined(); return j.ms !== null || Boolean(j.failed); };
+    const okJoin = await check('The demo joins its room in under 1 s', async () => {
+      await until(done, 20000, 'the page to join its room');
+      const j = o.joined();
+      if (j.failed) throw new Error(`the join failed: ${j.failed}`);
+      metric('joinMs', j.ms);
+      if (j.ms >= JOIN_MS) throw new Error(`joined in ${j.ms} ms, the limit is ${JOIN_MS} ms`);
+      return `${j.ms} ms`;
+    });
+    await check('Until joined, the arena shows "Joining" and the room name', async () => {
+      const j = o.joined(), want = `Joining ${j.room}`;
+      if (!String(j.text).startsWith(want)) throw new Error(`the arena said ${JSON.stringify(j.text || 'nothing')}, not "${want}…"`);
+      return j.text;
+    });
+    await check('"Add 5 bots" and "Move to the relay" were off until connected and are on now', async () => {
+      const j = o.joined();
+      if (j.botsOffWhileJoining !== true || j.migrateOffWhileJoining !== true) throw new Error(`while joining: Add 5 bots ${j.botsOffWhileJoining ? 'off' : 'ON'}, Move to the relay ${j.migrateOffWhileJoining ? 'off' : 'ON'}`);
+      if (!okJoin) throw new Error('the room never joined');
+      if (!j.botsOn || !j.migrateOn) throw new Error(`after the join: Add 5 bots ${j.botsOn ? 'on' : 'OFF'}, Move to the relay ${j.migrateOn ? 'on' : 'OFF'}`);
+      return 'off while joining, on after';
+    });
     progress(1);
     finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
   }
@@ -377,7 +408,7 @@ export function installNetPlaytest(o) {
       event('start', id); event('scene', 'Demo'); show();
       try {
         if (!sc) { problem('bug', `no playtest scenario "${id}" (have: ${scenarios.map((s) => s.id).join(', ')})`); return finish('error'); }
-        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : id === 'errors' ? errors() : smoke());
+        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : id === 'join' ? joinScenario() : id === 'errors' ? errors() : smoke());
       } catch (e) {
         if (mine === run && !mine.done) { problem('bug', `bot error: ${e?.message ?? e}`); log(String(e?.stack ?? e)); finish('error'); }
       } finally {
