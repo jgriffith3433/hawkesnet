@@ -81,11 +81,15 @@
 
 <footer><div class="wrap"><span>Hawkes Net, part of <a href="https://hawkesgen.ai/">Hawkes Gen</a></span><span><a href="/quickstart">Quickstart</a> · <a href="/dashboard">Dashboard</a> · <a href="/demo">Demo</a> · <a href="/healthz">Health</a></span></div></footer>
 
-<script>
+<script type="module">
 // One read of the service's public status when the page opens; nothing repeats (no timers, no polling).
+// window.hawkesNetLanding keeps what that one read found, for Studio's playtest (/landing-playtest.mjs).
+let settle; let settled = false;
+const landing = window.hawkesNetLanding = { ready: new Promise((r) => { settle = r; }), settled: () => settled };
 (async () => {
   const set = (cls, text) => { document.getElementById('state').className = `state ${cls}`; document.getElementById('stateText').textContent = text; };
   const num = (n) => Number(n || 0).toLocaleString();
+  const done = (rec) => { settled = true; settle(rec); };
   try {
     const r = await fetch('/v1/net/status', { cache: 'no-store' });
     const s = await r.json();
@@ -96,8 +100,11 @@
     const rooms = s.totals ? s.totals.rooms : Array.isArray(s.rooms) ? s.rooms.reduce((n, x) => n + Number(x.rooms || 0), 0) : 0;
     document.getElementById('stats').innerHTML = `<span><b>${num(players)}</b> playing</span><span><b>${num(rooms)}</b> rooms</span><span><b>${nodes.filter((n) => n.status === 'up').length}/${nodes.length}</b> relay nodes up</span><span>version <b>${String(s.version || '')}</b></span>`;
     document.documentElement.dataset.status = health;
-  } catch { set('down', 'down'); document.documentElement.dataset.status = 'down'; }
+    done({ health, version: String(s.version || '') });
+  } catch (e) { set('down', 'down'); document.documentElement.dataset.status = 'down'; done({ health: 'down', version: '', error: String(e?.message ?? e) }); }
 })();
+// Hawkes Studio's playtest bot (window.hawkesPlaytest). It does nothing until Studio starts it or the address has ?playtest=<id>.
+import('/landing-playtest.mjs').then((m) => m.installLandingPlaytest({ landing })).catch(() => {});
 </script>
 </body>
 </html>
