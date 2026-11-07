@@ -624,3 +624,33 @@ test('the root is a public landing page with status and the three SDKs; the dash
   assert.equal(st.health, 'ok');
   for (const p of ['/sdk/hawkes-net@1.mjs', '/sdk/com.hawkes.net.tgz']) assert.equal((await fetch(`${endpoint}${p}`)).status, 200, p);
 });
+
+test('peer to peer link: a fake WebRTC completes offer, answer and channel within 3 s (the player\'s ICE starts only once the host answered)', async () => {
+  // A tiny stand-in for RTCPeerConnection: the data channel opens on the player's side only after it applied the host's answer.
+  const pcs: any[] = [];
+  class FakePC {
+    iceConnectionState = 'new'; connectionState = 'new'; localDescription: any = null; remoteDescription: any = null;
+    ondatachannel: any = null; onicecandidate: any = null; chans: any[] = []; peer: any = null; id = pcs.length;
+    constructor() { pcs.push(this); }
+    createDataChannel(label: string) { const ch: any = { label, readyState: 'connecting', send() {}, close() {}, onopen: null }; this.chans.push(ch); return ch; }
+    async createOffer() { return { type: 'offer', sdp: `offer-${this.id}` }; }
+    async createAnswer() { return { type: 'answer', sdp: `answer-${this.id}` }; }
+    async setLocalDescription(d: any) { this.localDescription = d; }
+    async setRemoteDescription(d: any) {
+      this.remoteDescription = d;
+      if (d.type === 'answer') { this.iceConnectionState = 'connected'; for (const ch of this.chans) { ch.readyState = 'open'; ch.onopen?.(); } }
+    }
+    async addIceCandidate() {}
+    close() {}
+  }
+  const rtc = { RTCPeerConnection: FakePC };
+  const cfg = { config: { p2pMax: 2, maxPlayers: 8 } };
+  const a = await join('p2plink', opts({ name: 'Host', transport: 'auto', rtc, ...cfg }));
+  const b = await join('p2plink', opts({ name: 'Two', transport: 'auto', rtc, ...cfg }));
+  try {
+    const started = Date.now();
+    await wait(() => pcs.some((pc) => pc.remoteDescription?.type === 'answer'), 3000, 'the host\'s answer applied by the player');
+    await wait(() => b.transport === 'p2p' && pcs.some((pc) => pc.chans.some((c: any) => c.readyState === 'open')), 3000, 'the data channel open');
+    assert.ok(Date.now() - started < 3000);
+  } finally { await a.leave(); await b.leave(); }
+});
