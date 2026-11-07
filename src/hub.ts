@@ -111,6 +111,7 @@ export async function startHub(o: HubOptions = {}) {
   const demo = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo.html');
   // Hawkes Studio's playtest bot for the demo (window.hawkesPlaytest: two players meet, move, message, leave).
   const demoPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-playtest.mjs');
+  const landingPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
@@ -155,6 +156,10 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/demo-playtest.mjs') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(demoPlaytest));
+    }
+    if (route === '/landing-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(landingPlaytest));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
