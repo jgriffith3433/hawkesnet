@@ -31,7 +31,7 @@ const PING_MS = 5000;
 const SEND_MS = 33;
 const LINK_WAIT_MS = 8000;
 const OFFER_RETRY_MS = 2000; // a link offer with no answer is sent again after this long
-const OFFER_TRIES = 3;
+const OFFER_TRIES = 4; // the first send plus a re-send every OFFER_RETRY_MS: all inside LINK_WAIT_MS
 const SLEEP_GRACE_MS = 15_000;
 /** After a move to the relay, how long a player missing from the new list has to arrive before they count as gone. */
 const MOVE_GRACE_MS = 5000;
@@ -771,6 +771,8 @@ class Room {
     const link = { id, pc: null, channel: null, conn: null, iceWait: null };
     p.links.set(id, link);
     this._hostStream(link, 'sig');
+    // Tell the player it can offer now: an offer sent before this page ran the room was dropped, and the re-sends may all have gone the same way.
+    this._control({ c: 'sig', to: id, kind: 'ready', body: '' });
   }
   _hostStream(link, carrier) {
     const p = this.p2p;
@@ -973,6 +975,11 @@ class Room {
     // I'm a player: the host's answer, ICE, or data on the slow route.
     if (m.from !== p.host) return;
     if (m.kind === 'data') { let u8; try { u8 = unb64(m.body); } catch { return; } return this._fromHost(u8, 'sig'); }
+    if (m.kind === 'ready') {
+      // The host has its side of the link now: an offer it hasn't answered goes again (older hosts never send this).
+      if (p.pc && p.offer && !p.answered && p.carrier !== 'channel') this._sendOffer(p, wall());
+      return;
+    }
     const pc = p.pc;
     if (!pc) return;
     if (m.kind === 'answer') {
