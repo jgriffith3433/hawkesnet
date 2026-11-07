@@ -828,14 +828,16 @@ class Room {
     }
     // An offer with no answer yet (dropped on the signal route, or the host not ready for it): say it again, with the ICE seen so far.
     if (p.pc && p.offer && !p.answered && p.carrier !== 'channel' && p.offers < OFFER_TRIES && t - p.offerAt > OFFER_RETRY_MS) this._sendOffer(p, t);
+    // This browser found no address to offer (no network or UDP blocked: gathering is over with no candidate): a direct link can't open, so don't wait out LINK_WAIT_MS.
+    if (p.carrier !== 'channel' && !p.proposed && p.pc && p.pc.iceGatheringState === 'complete' && !(p.sentIce && p.sentIce.length) && t - p.since > 1500) { p.proposed = true; this._linkFailedWhy(p, t, 'this browser gathered no ICE candidates'); this.migrate('links failed'); return; }
     // A player with no link to the host after a while: the room should move to the relay (the node decides).
     if (p.carrier !== 'channel' && !p.proposed && t - p.since > LINK_WAIT_MS) { p.proposed = true; this._linkFailedWhy(p, t); this.migrate('links failed'); }
   }
   /** Says why the link to the host never opened (no WebRTC, switched off, or the ICE/data channel state), keeps it in `linkFailure` and warns in the console. */
-  _linkFailedWhy(p, t) {
+  _linkFailedWhy(p, t, extra) {
     const pc = p.pc;
     const why = !pc ? (this.o.direct === false ? 'direct links are switched off' : 'no WebRTC in this browser')
-      : `no data channel after ${Math.round((t - p.since) / 1000)} s (ice ${pc.iceConnectionState}, connection ${pc.connectionState}, channel ${p.channel?.readyState || 'none'})`;
+      : `no data channel after ${Math.round((t - p.since) / 1000)} s (ice ${pc.iceConnectionState}, connection ${pc.connectionState}, channel ${p.channel?.readyState || 'none'}, gathering ${pc.iceGatheringState}, ${p.sentIce?.length || 0} local candidates, answer ${p.answered ? 'applied' : 'not applied'})${extra ? ': ' + extra : ''}`;
     console.warn('[hawkes-net] link to the host failed:', why);
     this.linkFailure = why;
   }
