@@ -256,6 +256,7 @@
     openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
     drive: async (step) => { if (phone()) { await touchDrag([[0.3, 0.4], [0.4, 0.4], [0.5, 0.45], [0.6, 0.55], [0.65, 0.6]], 900); } else { await key('ArrowRight', 900); await key('ArrowDown', 700); } await step(100); },
     cornerDrive: async () => { if (phone()) await touchDrag([[0.5, 0.5], [0.25, 0.25], [0.02, 0.02], [0, 0]], 600); else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); } },
+    switchLines: () => $('log').textContent.split('\n').filter((l) => l.includes("Couldn't connect directly")),
     view: () => window.hawkesNetDemoView,
     joined: () => ({ ms: joinInfo.ms, text: joinInfo.text, botsOffWhileJoining: joinInfo.botsOff, migrateOffWhileJoining: joinInfo.migrateOff, botsOn: !$('bots').disabled, migrateOn: !$('migrate').disabled, room, failed: joinInfo.failed }),
     myPos: () => [pos.x, 0, pos.y],
