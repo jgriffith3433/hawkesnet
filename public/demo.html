@@ -230,10 +230,11 @@
   }
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
+  const { siteChecks, addSiteScenario } = await import('/site-playtest.mjs'); // the site checks: the `site` scenario, and the end of `smoke`
   const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
-  installNetPlaytest({
+  const playtest = installNetPlaytest({
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
     drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
@@ -244,7 +245,10 @@
     shownPos: (id) => tracks.get(id)?.sample() ?? null,
     botPose: (u) => [200 + 500 * u, 0, 450],
     tolerance: 8,
-    extra: async ({ check, main, bot, until, metric, roundTrips }) => {
+    extra: async (c) => { await peerChecks(c); await siteChecks({ check: c.check, metric: c.metric }); }, // the site checks close the smoke
+  });
+  addSiteScenario(playtest);
+  async function peerChecks({ check, main, bot, until, metric, roundTrips }) {
       metric('p2p', main.transport === 'p2p' ? 1 : 0);
       if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));
       await check('The peer to peer link opened and the room stayed peer to peer', async () => {
@@ -261,8 +265,7 @@
         metric('relayRttMs', rtt);
         return `moved in ${Math.round(ms)} ms, round trip ${rtt} ms`;
       });
-    },
-  });
+  }
 </script>
 <script src="/site.js" defer></script>
 </body>
