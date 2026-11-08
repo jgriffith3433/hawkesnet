@@ -73,8 +73,13 @@
   const cv = $('c'), g = cv.getContext('2d');
   // Pointer events cover mouse, pen and touch: a press or tap puts your player there, dragging carries it (touch-action: none on the canvas keeps the page from scrolling).
   const moveTo = (e) => { const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); };
-  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); });
-  cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) moveTo(e); });
+  // `inputNote` is the playtest's (it puts each finished gesture in the run's events: a tap or a drag, with its pointer type and where it went); null otherwise.
+  let inputNote = null, gesture = null;
+  const spot = () => `${Math.round(pos.x)},${Math.round(pos.y)}`;
+  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); gesture = { type: e.pointerType || 'mouse', moves: 0, from: spot() }; });
+  cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) { moveTo(e); if (gesture) gesture.moves++; } });
+  const endGesture = () => { if (gesture) inputNote?.(gesture.moves ? 'drag' : 'tap', `${gesture.type}: ${gesture.moves} moves, from ${gesture.from} to ${spot()}`); gesture = null; };
+  cv.addEventListener('pointerup', endGesture); cv.addEventListener('pointercancel', endGesture);
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
   const direct = blocked ? false : undefined;
   // Joining starts first and alone: the ticket and the socket don't wait for the playtest bot's file (they used to, one after the other).
@@ -238,16 +243,19 @@
   }
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
-  const { siteChecks, addSiteScenario } = await import('/site-playtest.mjs'); // the site checks: the `site` scenario, and the end of `smoke`
+  const { siteChecks, addSiteScenario, addInputEvents } = await import('/site-playtest.mjs'); // the site checks: the `site` scenario, and the end of `smoke`
   // On a phone-sized page the bot plays by touch: a finger pressed on the arena and dragged (pointer events, pointerType touch).
+  // `sample` is called after each move, so a check can see the player follow the finger.
   const phone = () => innerWidth <= 640;
-  const touchDrag = async (path, ms) => {
-    const r = cv.getBoundingClientRect(), at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true });
-    cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(path[0]), button: 0, buttons: 1 }));
-    for (let i = 1; i < path.length; i++) { await new Promise((res) => setTimeout(res, ms / path.length)); cv.dispatchEvent(new PointerEvent('pointermove', { ...at(path[i]), buttons: 1 })); }
+  const pointerDrag = async (path, ms, { type = 'touch', sample = () => {} } = {}) => {
+    const r = cv.getBoundingClientRect(), id = type === 'mouse' ? 1 : 7;
+    const at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: id, pointerType: type, isPrimary: true, bubbles: true });
+    cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(path[0]), button: 0, buttons: 1 })); sample(0);
+    for (let i = 1; i < path.length; i++) { await new Promise((res) => setTimeout(res, ms / path.length)); cv.dispatchEvent(new PointerEvent('pointermove', { ...at(path[i]), buttons: 1 })); sample(i); }
     cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
   };
-  const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
+  const touchDrag = (path, ms) => pointerDrag(path, ms, { type: 'touch' });
+  const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
   const playtest = installNetPlaytest({
@@ -263,9 +271,39 @@
     shownPos: (id) => tracks.get(id)?.sample() ?? null,
     botPose: (u) => [200 + 500 * u, 0, 450],
     tolerance: 8,
-    extra: async (c) => { await peerChecks(c); await siteChecks({ check: c.check, metric: c.metric }); }, // the site checks close the smoke
+    extra: async (c) => { await dragChecks(c); await peerChecks(c); await siteChecks({ check: c.check, metric: c.metric }); }, // the arena's pointer checks come first, the site checks close the smoke
   });
   addSiteScenario(playtest);
+  inputNote = addInputEvents(playtest); // from here the page's own tap and drag events are in the run's report
+  // Criterion: dragging or tapping on the arena moves your player. The bot presses, drags and lifts with pointer events (touch, then mouse), and the
+  // checks read where the player is after each step: it must follow the pointer, and end where the pointer ended.
+  async function dragChecks({ check, metric }) {
+    const arena = (u, v) => [u * W, v * H];
+    const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    for (const [type, path] of [['touch', [[0.2, 0.3], [0.28, 0.36], [0.36, 0.42], [0.44, 0.5], [0.5, 0.55]]], ['mouse', [[0.8, 0.2], [0.72, 0.28], [0.64, 0.36], [0.56, 0.44], [0.5, 0.2]]]]) {
+      await check(`Dragging on the arena moves this player (${type} pointer${phone() ? ', phone size' : ''})`, async () => {
+        const seen = [];
+        await pointerDrag(path, 800, { type, sample: () => seen.push([pos.x, pos.y]) });
+        const end = arena(...path[path.length - 1]);
+        // Every sample was taken right after a move event: the player stood where that finger was (within the arena's pixel rounding), so it followed all the way.
+        const off = seen.map((p, i) => dist(p, arena(...path[i])));
+        const worst = Math.round(Math.max(...off));
+        if (worst > 8) throw new Error(`the player was ${worst} arena units from the ${type} pointer at its worst (it should follow it)`);
+        const travelled = Math.round(dist(seen[0], seen[seen.length - 1]));
+        if (travelled < 100) throw new Error(`the player moved only ${travelled} units during a long drag`);
+        if (dist([pos.x, pos.y], end) > 8) throw new Error(`the drag ended at ${Math.round(end[0])},${Math.round(end[1])} but the player is at ${Math.round(pos.x)},${Math.round(pos.y)}`);
+        metric(`${type}DragUnits`, travelled);
+        return `followed the ${type} pointer ${travelled} units, ended at ${Math.round(pos.x)},${Math.round(pos.y)}`;
+      });
+    }
+    await check('Tapping the arena puts this player there', async () => {
+      const target = [0.35, 0.7];
+      await pointerDrag([target], 0, { type: phone() ? 'touch' : 'mouse' });
+      const end = arena(...target);
+      if (dist([pos.x, pos.y], end) > 8) throw new Error(`a tap at ${Math.round(end[0])},${Math.round(end[1])} left the player at ${Math.round(pos.x)},${Math.round(pos.y)}`);
+      return `at ${Math.round(pos.x)},${Math.round(pos.y)}`;
+    });
+  }
   async function peerChecks({ check, main, bot, until, metric, roundTrips }) {
       metric('p2p', main.transport === 'p2p' ? 1 : 0);
       if (main.transport !== 'p2p') return void (await check('The room is on the relay', async () => `transport ${main.transport}`));

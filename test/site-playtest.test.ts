@@ -138,3 +138,36 @@ test('judgePhone: passes a folded, readable page and names what is wrong otherwi
   assert.throws(() => m.judgePhone({ ...GOOD_PHONE, minFont: 10 }), /too small|as small as 10/);
   assert.throws(() => m.judgePhone({ ...GOOD_PHONE, wideBlocks: 2 }), /scroll inside/);
 });
+
+test('addInputEvents: the page reports a tap or drag, and the run\'s report carries it in order with the bot\'s events', async () => {
+  let started = 0;
+  const api: any = { start: async () => { started++; }, report: () => ({ scenario: 'smoke', seconds: 2, events: [{ t: 0, type: 'start' }, { t: 3, type: 'finish', detail: 'won' }], problems: [] }) };
+  const note = m.addInputEvents(api);
+  note('drag', 'from the run that began before start was wrapped');
+  await api.start('smoke');
+  assert.equal(started, 1);
+  note('drag', 'touch: 4 moves, from 288,180 to 480,330');
+  note('tap', 'mouse: 0 moves, from 336,420 to 336,420');
+  const types = api.report().events.map((e: any) => e.type);
+  assert.deepEqual(types.filter((t: string) => t === 'drag' || t === 'tap'), ['drag', 'tap'], 'a new start clears what came before it');
+  assert.equal(types[0], 'start');
+  assert.match(api.report().events.find((e: any) => e.type === 'drag').detail, /touch: 4 moves/);
+});
+
+test('addInputEvents: a run the address started before it was called keeps its clock', () => {
+  const api: any = { start: async () => {}, report: () => ({ scenario: 'smoke', seconds: 5, events: [{ t: 0, type: 'start' }], problems: [] }) };
+  const note = m.addInputEvents(api);
+  note('drag', 'touch: 3 moves, from 1,1 to 2,2');
+  const e = api.report().events.find((x: any) => x.type === 'drag');
+  assert.ok(e.t >= 5 && e.t < 6, `t is ${e.t}`);
+});
+
+test('the demo: the page logs each tap and drag, and smoke drags and taps the arena with touch and mouse pointers', () => {
+  const html = fs.readFileSync(new URL('../public/demo.html', import.meta.url), 'utf8');
+  assert.match(html, /inputNote\?\.\(gesture\.moves \? 'drag' : 'tap'/);
+  assert.match(html, /addEventListener\('pointerup', endGesture\)/);
+  assert.match(html, /inputNote = addInputEvents\(playtest\)/);
+  assert.ok(html.indexOf('await dragChecks(c)') < html.indexOf('await peerChecks(c)'), 'the drag checks run in smoke before the peer checks');
+  assert.match(html, /\['touch', \[\[/); assert.match(html, /\['mouse', \[\[/);
+  assert.match(html, /Dragging on the arena moves this player/);
+});
