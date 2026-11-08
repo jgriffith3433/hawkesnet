@@ -84,11 +84,30 @@ export async function checkLinks(html, { pageUrl, origin, fetchFn, concurrency =
   return { page: pageUrl, results, failed: results.filter((r) => !r.ok), counts };
 }
 
+// ---- the site check's pure parts (test/site.test.ts runs them)
+/** "rgb(…)", "rgba(…)" or "color(srgb r g b / a)" -> [r, g, b, a] (0-255, a 0-1), or null. */
+export function parseColor(c) {
+  const m = String(c).match(/^(rgba?|color)\(\s*(?:srgb\s+)?([^)]*)\)$/i);
+  if (!m) return null;
+  const parts = m[2].split(/[\s,/]+/).filter(Boolean).map(Number);
+  if (parts.length < 3 || parts.some((n) => Number.isNaN(n))) return null;
+  const k = m[1].toLowerCase() === 'color' ? 255 : 1;
+  return [parts[0] * k, parts[1] * k, parts[2] * k, parts.length > 3 ? parts[3] : 1];
+}
+/** `top` (with its alpha) laid over the opaque `under`. */
+export function over(top, under) { const a = top[3]; return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat(1); }
+export function luminance(c) { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); }
+/** WCAG contrast ratio of two opaque colors. */
+export function contrastRatio(a, b) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+export const SITE_PAGES = [['Home', '/'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart'], ['Demo', '/demo'], ['Dashboard', '/dashboard']];
+
 /** Installs window.hawkesPlaytest on the landing page. `o.landing` is the page's own status record (see landing.html). */
 export function installLandingPlaytest(o = {}) {
   const scenarios = [
     { id: 'smoke', title: 'Landing page: status and version, docs and quickstart links, then two players in the demo', seconds: 70, tags: ['smoke'],
       description: 'Stays on the Hawkes Net site. Reads the status (ok or degraded) and version the page showed on load, opens the docs page and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only), then opens /demo in a frame on this page and runs the demo\'s own two-player check.' },
+    { id: 'site', title: 'Every page: the same header, a Copy button on each code block, AA contrast, no timers', seconds: 60, tags: ['full'],
+      description: 'Opens the landing page, docs, quickstart, demo and dashboard one after another in a frame. On each it checks the header (Home, Docs, Quickstart, Demo, the same on every page), clicks Copy on every code block, measures the contrast of every visible text against its background (AA, 4.5:1, or 3:1 for large text), and checks the page and the shared script have no timers and that no request is made after load.' },
   ];
   const STALL = 60;
   const origin = location.origin;
@@ -223,6 +242,109 @@ export function installLandingPlaytest(o = {}) {
     finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
   }
 
+  /** One page in a frame, checked for the site's four promises. */
+  async function sitePage(name, path) {
+    const frame = document.createElement('iframe');
+    frame.title = `Hawkes Net ${name}, under playtest`;
+    frame.style.cssText = 'display:block;width:100%;max-width:1100px;height:620px;margin:16px auto;border:1px solid #888;border-radius:10px;background:#0f1115';
+    frame.src = path;
+    const loaded = new Promise((res) => frame.addEventListener('load', res, { once: true }));
+    document.body.appendChild(frame);
+    frame.scrollIntoView({ block: 'center' });
+    try {
+      await Promise.race([loaded, new Promise((_, rej) => setTimeout(() => rej(new Error(`${path} did not load in 20 s`)), 20000))]);
+      const w = frame.contentWindow, d = frame.contentDocument;
+      const rec = { name, path };
+      // 1. the header
+      await check(`${name}: the header has Home, Docs, Quickstart and Demo`, async () => {
+        const nav = [...d.querySelectorAll('header.site-header nav a')];
+        if (!nav.length) throw new Error('no shared header on the page');
+        const got = nav.map((a) => `${a.textContent.trim()} ${new URL(a.getAttribute('href'), origin).pathname}`);
+        for (const [label, href] of SITE_PAGES) if (!got.some((g) => g === `${label} ${href}`)) throw new Error(`no ${label} link to ${href} (has: ${got.join(', ')})`);
+        rec.header = nav.map((a) => a.getAttribute('href')).join(' ');
+        return nav.map((a) => a.textContent.trim()).join(' · ');
+      });
+      // 2. Copy on every code block (real clicks)
+      await check(`${name}: every code block has a Copy button that works`, async () => {
+        const pres = [...d.querySelectorAll('pre')];
+        metric(`${name}CodeBlocks`, pres.length);
+        let n = 0;
+        for (const pre of pres) {
+          const btn = pre.parentElement?.querySelector(':scope > button.copy');
+          if (!btn) throw new Error(`a code block has no Copy button: ${pre.textContent.trim().slice(0, 40)}`);
+          if (!btn.textContent.includes('Copy')) throw new Error('the Copy button has no label');
+          btn.focus(); btn.click();
+          const t0 = performance.now();
+          while (!btn.classList.contains('copied') && performance.now() - t0 < 2000) await new Promise((r) => setTimeout(r, 25));
+          if (!btn.classList.contains('copied')) throw new Error(`Copy did nothing on: ${pre.textContent.trim().slice(0, 40)}`);
+          n++;
+        }
+        event('copy', `${name}: ${n} of ${pres.length}`);
+        return pres.length ? `${n} of ${pres.length} blocks copied` : 'no code blocks on this page';
+      });
+      // 3. AA contrast of every visible text
+      await check(`${name}: text and buttons meet AA contrast`, async () => {
+        const bad = [];
+        let seen = 0, worst = 21;
+        const walker = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT);
+        const done = new Set();
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const el = n.parentElement;
+          if (!el || done.has(el) || !n.textContent.trim() || ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) continue;
+          done.add(el);
+          const cs = w.getComputedStyle(el);
+          if (cs.visibility === 'hidden' || cs.display === 'none' || (el.getClientRects().length === 0)) continue;
+          if (el.closest('[disabled], #hawkes-net-playtest')) continue;
+          let fg = parseColor(cs.color), bg = null;
+          const layers = [];
+          for (let e = el; e; e = e.parentElement) { const c = parseColor(w.getComputedStyle(e).backgroundColor); if (c && c[3] > 0) { layers.push(c); if (c[3] >= 1) break; } }
+          bg = layers.reduceRight((under, c) => over(c, under), [15, 17, 21, 1]);
+          if (!fg) continue;
+          fg = over(fg, bg);
+          const px = parseFloat(cs.fontSize), large = px >= 24 || (px >= 18.66 && Number(cs.fontWeight) >= 700);
+          const ratio = contrastRatio(fg, bg);
+          seen++; worst = Math.min(worst, ratio);
+          if (ratio < (large ? 3 : 4.5)) bad.push(`"${n.textContent.trim().slice(0, 24)}" ${ratio.toFixed(2)}:1`);
+        }
+        metric(`${name}WorstContrast`, Math.round(worst * 100) / 100);
+        if (!seen) throw new Error('found no text to measure');
+        if (bad.length) throw new Error(`${bad.length} below AA: ${bad.slice(0, 4).join('; ')}`);
+        return `${seen} texts, the lowest ${worst.toFixed(1)}:1`;
+      });
+      // 4. no timers, no requests after load
+      await check(`${name}: nothing repeats requests on a timer`, async () => {
+        const src = await (await fetch(path, { cache: 'no-store' })).text();
+        const shared = await (await fetch('/site.js', { cache: 'no-store' })).text();
+        if (/setInterval/.test(src) || /setInterval/.test(shared)) throw new Error('the page or the shared script calls setInterval');
+        const before = w.performance.getEntriesByType('resource').length;
+        await new Promise((r) => setTimeout(r, 2500)); // the one wait here: a quiet page makes no request in it
+        const after = w.performance.getEntriesByType('resource').length;
+        if (after !== before) throw new Error(`${after - before} request(s) in 2.5 s with the page idle`);
+        return `${before} requests at load, none after`;
+      });
+      rec.header && (run.state.note = `${name} checked`);
+      return rec;
+    } finally {
+      setTimeout(() => frame.remove(), 1200);
+    }
+  }
+
+  async function site() {
+    const pages = [['Home', '/'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart'], ['Demo', '/demo?room=site-pt-' + Math.random().toString(36).slice(2, 7)], ['Dashboard', '/dashboard']];
+    const headers = [];
+    for (let i = 0; i < pages.length; i++) {
+      try { const r = await sitePage(pages[i][0], pages[i][1]); headers.push(r.header); } catch (e) { await check(`${pages[i][0]}: opened`, () => { throw e; }); }
+      progress((i + 1) / pages.length);
+    }
+    await check('Every page shows the same header', async () => {
+      const set = new Set(headers.filter(Boolean));
+      if (headers.filter(Boolean).length !== pages.length) throw new Error('a page did not show the header');
+      if (set.size !== 1) throw new Error(`headers differ: ${[...set].join(' | ')}`);
+      return [...set][0];
+    });
+    finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
+  }
+
   const api = {
     version: 1,
     product: 'hawkes-net',
@@ -236,7 +358,7 @@ export function installLandingPlaytest(o = {}) {
       event('start', id); event('scene', 'Landing'); show();
       try {
         if (!sc) { problem('bug', `no playtest scenario "${id}" (have: ${scenarios.map((s) => s.id).join(', ')})`); return finish('error'); }
-        await smoke();
+        await (id === 'site' ? site() : smoke());
       } catch (e) {
         if (mine === run && !mine.done) { problem('bug', `bot error: ${e?.message ?? e}`); log(String(e?.stack ?? e)); finish('error'); }
       }

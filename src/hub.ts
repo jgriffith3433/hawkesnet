@@ -114,6 +114,8 @@ export async function startHub(o: HubOptions = {}) {
   const landingPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
+  const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
+  const siteJs = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.js');
   const dashboard = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'dashboard.html');
   // What this process runs: the repo and its commit (from .git, read once), so a deploy can be seen from outside.
   const build = (() => {
@@ -134,9 +136,15 @@ export async function startHub(o: HubOptions = {}) {
     // The front door: on the relay's own names a public landing page (what Hawkes Net is, its live status, the SDKs); on the
     // dashboard's names (net.hawkesgames.com, net-beta.hawkesgames.com) the developer dashboard, which is also at /dashboard.
     const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(String(req.headers.host ?? '').split(':')[0]);
-    if (route === '/' || route === '/dashboard') {
+    // /home is the landing page on every name (the header's Home link: on the dashboard's names "/" is the dashboard).
+    if (route === '/' || route === '/dashboard' || route === '/home') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
-      return void res.end(fs.readFileSync(route === '/' && !dashHost ? landing : dashboard));
+      return void res.end(fs.readFileSync(route === '/dashboard' || (route === '/' && dashHost) ? dashboard : landing));
+    }
+    // The look and the header every page shares (public/site.css, public/site.js).
+    if (route === '/site.css' || route === '/site.js') {
+      res.writeHead(200, { 'Content-Type': route === '/site.css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(route === '/site.css' ? siteCss : siteJs));
     }
     // The demo: dots in a room, peer to peer, then the relay (open it in two tabs).
     // The error codes (src/errors.ts, docs/errors.md): every error's `docs` link points here.

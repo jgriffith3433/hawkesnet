@@ -120,12 +120,12 @@ export function errorsMarkdown() {
 export function errorsHtml() {
   const rows = ERROR_CODES.map((c) => `<tr id="${c}"><td><a href="#${c}"><code>${c}</code></a></td><td>${ERRORS[c].status}</td><td>${esc(ERRORS[c].title)}</td><td>${esc(ERRORS[c].fix)}</td></tr>`).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hawkes Net errors</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;background:#0f1115;color:#e6e8ee}a{color:#7cc4ff}code,pre{background:#1a1d24;padding:.1em .35em;border-radius:4px}pre{padding:.8em;overflow:auto}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #2a2f3a;padding:.45em .6em;text-align:left;vertical-align:top}tr:target{background:#1d2a3a}</style></head><body>
+<link rel="stylesheet" href="/site.css"><style>main{max-width:60rem;margin:0 auto;padding:1rem 1rem 3rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--line);padding:.45em .6em;text-align:left;vertical-align:top}tr:target{background:var(--card);box-shadow:inset 3px 0 0 var(--accent)}</style></head><body><main>
 <h1>Hawkes Net errors</h1>
 <p>Every error the service answers with has a stable <code>code</code>, a plain <code>message</code> and a <code>docs</code> link to its row below.</p>
 <pre>{ "code": "room_invalid", "message": "room is 1 to 64 of letters, digits and / _ . -", "docs": "${docsBase()}/docs/errors#room_invalid", "error": "..." }</pre>
 <p>Match on <code>code</code>: codes never change. <code>message</code> is for people. <code>error</code> repeats <code>message</code> for older SDKs. The same list as JSON: <a href="/v1/net/errors">/v1/net/errors</a>.</p>
 <table><thead><tr><th>Code</th><th>Status</th><th>What it means</th><th>What to do</th></tr></thead><tbody>
 ${rows}
-</tbody></table></body></html>`;
+</tbody></table></main><script src="/site.js" defer></script></body></html>`;
 }
