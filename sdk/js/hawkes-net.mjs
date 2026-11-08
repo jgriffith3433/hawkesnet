@@ -29,7 +29,7 @@ export function defaultEndpoint() {
 const DEFAULT_ICE = [{ urls: ['stun:stun.cloudflare.com:3478'] }, { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 const PING_MS = 5000;
 const SEND_MS = 33;
-const LINK_WAIT_MS = 8000;
+const LINK_WAIT_MS = 2500; // the one deadline for a direct link; ICE failing, no WebRTC or direct:false switch to the relay at once, without waiting for it
 const OFFER_RETRY_MS = 2000; // a link offer with no answer is sent again after this long
 const OFFER_TRIES = 4; // the first send plus a re-send every OFFER_RETRY_MS: all inside LINK_WAIT_MS
 const SLEEP_GRACE_MS = 15_000;
@@ -837,6 +837,11 @@ class Room {
     // A player with no link to the host after a while: the room should move to the relay (the node decides).
     if (p.carrier !== 'channel' && !p.proposed && t - p.since > LINK_WAIT_MS) { p.proposed = true; this._linkFailedWhy(p, t); this.migrate('links failed'); }
   }
+  /** A direct link can't open (decided by an event, not a check): say why once and ask the node to move the room to the relay. */
+  _linkFailNow(p, extra) {
+    if (this.p2p !== p || p.proposed || p.carrier === 'channel') return;
+    p.proposed = true; this._linkFailedWhy(p, wall(), extra); this.migrate('links failed');
+  }
   /** Says why the link to the host never opened (no WebRTC, switched off, or the ICE/data channel state), keeps it in `linkFailure` and warns in the console. */
   _linkFailedWhy(p, t, extra) {
     const pc = p.pc;
@@ -861,7 +866,8 @@ class Room {
     // Meanwhile (and if WebRTC can't link at all), the signal route carries my stream to the host and back.
     this._control({ c: 'sig', to: p.host, kind: 'hi', body: '' });
     const PC = this._rtc();
-    if (!PC || this.o.direct === false) return;
+    if (this.o.direct === false) { this._linkFailNow(p); return; } // blocked on purpose: the relay at once
+    if (!PC) return; // no WebRTC here: the signal route carries the stream until the deadline
     const pc = new PC({ iceServers: this.ice });
     p.pc = pc;
     const ch = pc.createDataChannel('hn', { ordered: true });
@@ -887,6 +893,7 @@ class Room {
       this._route(p.host, 'signal');
     };
     ch.onmessage = (e) => this._fromHost(new Uint8Array(e.data), 'channel');
+    pc.oniceconnectionstatechange = () => { if (pc.iceConnectionState === 'failed') this._linkFailNow(p, 'ICE failed'); };
     pc.onicecandidate = (e) => { if (e.candidate) { (p.sentIce || (p.sentIce = [])).push(e.candidate); this._sendIce(p.host, e.candidate); } };
     void (async () => {
       try {
