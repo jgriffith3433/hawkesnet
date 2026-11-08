@@ -58,5 +58,8 @@ test('phone size: the header folds into a Menu button, wide things scroll inside
   assert.match(demo, /addEventListener\('pointerdown'/);
   assert.match(demo, /addEventListener\('pointermove'/);
   assert.match(demo, /touch-action: none/);
+  // A grid track must be able to shrink below its content (a code line is wider than 390 px): minmax(0, 1fr), never a bare 1fr.
+  for (const page of ['landing.html', 'quickstart.html']) assert.doesNotMatch(read(page), /grid-template-columns: 1fr[;} ]/, page);
+  assert.match(css, /\.codeblock, \.card pre[^{]*\{ min-width: 0; max-width: 100%/);
   assert.match(await (await fetch(hub.endpoint + '/docs/errors')).text(), /table\{display:block;overflow-x:auto\}/);
 });
