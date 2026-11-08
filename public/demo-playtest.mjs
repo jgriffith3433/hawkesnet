@@ -227,12 +227,26 @@ export function installNetPlaytest(o) {
         return `${host.transport} / ${guest.transport}`;
       });
       await check('A message from the host reaches the player', async () => {
-        let got = false; guest.when('hn-pt-fallback', () => { got = true; });
-        const t = setInterval(() => { try { host.send('hn-pt-fallback', { hi: 1 }); } catch { /* not yet */ } }, 200);
-        try { await until(() => got, 4000, 'the host\'s message'); } finally { clearInterval(t); }
+        // Messages are `on` (events like 'transport' are `when`). Sent to the player by id, again until it answers (the host may not have it yet).
+        let got = false; const off = guest.on('hn-pt-fallback', () => { got = true; });
+        const t = setInterval(() => { try { host.send('hn-pt-fallback', { hi: 1 }, { to: guest.id }); } catch { /* not yet */ } }, 200);
+        try { await until(() => got, 4000, 'the host\'s message'); } finally { clearInterval(t); off(); }
         return 'delivered';
       });
+      if (o.switchLines) {
+        await check('The demo log says the switch in one short line', async () => {
+          await until(() => o.switchLines().length >= 1, 3000, 'the demo log to say "Couldn\'t connect directly, switched to relay"');
+          await wait(300);
+          const lines = o.switchLines();
+          event('log', lines[0]);
+          if (lines.length !== 1) throw new Error(`${lines.length} lines say the switch: ${lines.join(' | ')}`);
+          if (lines[0].length > 80) throw new Error(`the line is ${lines[0].length} characters long`);
+          return lines[0];
+        });
+      }
     } finally { for (const n of [guest, host]) { try { await n?.leave(); } catch { /* gone */ } } }
+    progress(1);
+    finish(run.lines.every((l) => l.ok) ? 'won' : 'lost');
   }
   async function joinScenario() {
     if (!o.joined) { problem('bug', 'this page has no join record to check'); return finish('error'); }

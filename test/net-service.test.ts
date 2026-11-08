@@ -668,6 +668,11 @@ test('direct links blocked: the room moves to the relay and the player sees the 
       assert.ok(Date.now() - t0 < 3000, `took ${Date.now() - t0} ms`);
       assert.equal(moves.filter((e) => e.why === 'links failed').length, 1);
       assert.match(b.linkFailure || '', /switched off/);
+      // The playtest's next step: a message from the host, sent to the player by id, arrives on the relay (messages are `on`, events `when`).
+      const got: any[] = [];
+      b.on('hn-pt-fallback', (d: any) => got.push(d));
+      a.send('hn-pt-fallback', { hi: 1 }, { to: b.id });
+      await wait(() => got.length === 1, 2000, 'the host\'s message on the relay');
     } finally { await b.leave(); }
   } finally { await a.leave(); }
 });
