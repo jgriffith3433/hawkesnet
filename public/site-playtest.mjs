@@ -249,3 +249,24 @@ export function addSiteScenario(api, { origin = location.origin, fetchFn, read, 
   api.stop = () => { if (mine()) finish('done'); return original.stop(); };
   return api;
 }
+
+/**
+ * Puts the page's own input into the run's events. The shared bot's events only say which checks ran; a drag or a tap on the
+ * arena is seen by the page, so the page reports it (`note(type, detail)`, returned here) and the report of the run that is
+ * current carries it in order with the bot's events: { t, type: 'drag', detail: 'touch: 4 moves, from 288,300 to 480,330' }.
+ * Works with the original `start` and with a run the address started (?playtest=smoke) before this was called.
+ */
+export function addInputEvents(api) {
+  let t0 = null, list = [];
+  const original = { start: api.start, report: api.report };
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const early = original.report?.(); // a run that began at load (?playtest=...): its clock is seconds old now
+  if (early) t0 = performance.now() - early.seconds * 1000;
+  api.start = (id, options) => { t0 = performance.now(); list = []; return original.start(id, options); };
+  api.report = () => {
+    const r = original.report();
+    if (!r || !list.length) return r;
+    return { ...r, events: [...r.events, ...list].sort((a, b) => a.t - b.t) };
+  };
+  return (type, detail) => { if (t0 !== null && list.length < 200) list.push({ t: r1((performance.now() - t0) / 1000), type, detail: String(detail) }); };
+}
