@@ -345,6 +345,7 @@ class Room {
     try { ws = new WS(url, ['hawkes-net.v3']); } catch (e) { return this._lost(0, String(e?.message || e)); }
     ws.binaryType = 'arraybuffer';
     this.ws = ws;
+    this._resuming = query.startsWith('r=');
     this.wsCodec = { in: new core.Codec(), out: new core.Codec() };
     ws.onmessage = (e) => { if (this.ws === ws) this._fromSocket(e.data); };
     ws.onclose = (e) => { if (this.ws === ws) { this.ws = null; this._lost(e.code, e.reason); } };
@@ -361,13 +362,16 @@ class Room {
       this._refused?.(Object.assign(new Error(`hawkes-net: could not join (${code}${reason ? ` ${reason}` : ''})`), { code }));
       return;
     }
+    // A resume try that closed before its hello (410 resume_gone after a node restart, a 502 while it comes back): the room
+    // is gone or not there yet, so don't resume again; the next try asks for a new ticket.
+    if (this._resuming) { this._resuming = false; this.resume = null; }
     this._status('reconnecting');
     this.st.reconnects++;
     this._teardownP2p();
     const wait = Math.min(15_000, 500 * 2 ** Math.min(5, this.retry++));
     setTimeout(() => {
       if (this.closed || this.ws) return;
-      if (this.resume && this.retry <= 4) this._connect(`r=${encodeURIComponent(this.resume)}`);
+      if (this.resume) this._connect(`r=${encodeURIComponent(this.resume)}`);
       else void this._rejoin();
     }, wait);
   }
@@ -406,7 +410,7 @@ class Room {
   }
 
   _hello(h) {
-    this.retry = 0;
+    this.retry = 0; this._resuming = false;
     if (h.resume) this.resume = h.resume;
     if (h.cfg) this.config = h.cfg;
     const resumed = Boolean(h.resumed);
