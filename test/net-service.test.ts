@@ -654,3 +654,40 @@ test('peer to peer link: a fake WebRTC completes offer, answer and channel withi
     assert.ok(Date.now() - started < 3000);
   } finally { await a.leave(); await b.leave(); }
 });
+
+test('direct links blocked: the room moves to the relay and the player sees the host in under 3 s, with one "links failed" move', async () => {
+  const cfg = { config: { p2pMax: 8, maxPlayers: 8 } };
+  const a = await join('p2pblocked', opts({ name: 'Host', transport: 'auto', direct: false, ...cfg }));
+  const moves: any[] = [];
+  try {
+    const t0 = Date.now();
+    const b = await join('p2pblocked', opts({ name: 'Two', transport: 'auto', direct: false, ...cfg }));
+    b.when('transport', (e: any) => moves.push(e));
+    try {
+      await wait(() => b.transport === 'relay' && b.peers.has(a.id), 3000, 'the relay with the host in the list');
+      assert.ok(Date.now() - t0 < 3000, `took ${Date.now() - t0} ms`);
+      assert.equal(moves.filter((e) => e.why === 'links failed').length, 1);
+      assert.match(b.linkFailure || '', /switched off/);
+    } finally { await b.leave(); }
+  } finally { await a.leave(); }
+});
+
+test('direct links: ICE failing moves the room to the relay at once, not after the deadline', async () => {
+  class FailPC {
+    iceConnectionState = 'new'; connectionState = 'new'; iceGatheringState = 'new'; localDescription: any = null;
+    oniceconnectionstatechange: any = null; onicecandidate: any = null;
+    createDataChannel() { return { readyState: 'connecting', send() {}, close() {} }; }
+    async createOffer() { return { type: 'offer', sdp: 'x' }; }
+    async setLocalDescription(d: any) { this.localDescription = d; setTimeout(() => { this.iceConnectionState = 'failed'; this.oniceconnectionstatechange?.(); }, 100); }
+    close() {}
+  }
+  const cfg = { config: { p2pMax: 8, maxPlayers: 8 } };
+  const a = await join('p2pice', opts({ name: 'Host', transport: 'auto', direct: false, ...cfg }));
+  const b = await join('p2pice', opts({ name: 'Two', transport: 'auto', rtc: { RTCPeerConnection: FailPC }, ...cfg }));
+  try {
+    const t0 = Date.now();
+    await wait(() => b.transport === 'relay' && b.peers.has(a.id), 2400, 'the relay after ICE failed');
+    assert.ok(Date.now() - t0 < 2400);
+    assert.match(b.linkFailure || '', /ICE failed/);
+  } finally { await b.leave(); await a.leave(); }
+});

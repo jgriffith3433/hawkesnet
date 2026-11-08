@@ -34,6 +34,8 @@ export function installNetPlaytest(o) {
       description: 'Connects to the page\'s Hawkes Net, opens a second player in the same room, checks poses both ways (this page\'s player moved by real input), messages both ways, and the second player leaving.' },
     { id: 'two-players', title: 'Real browsers on one ?room= find each other, move and message', seconds: 75, tags: ['full', 'multiplayer'],
       description: 'Run with Studio peers 2-4: each browser waits for another player in its ?room=, moves by real input, checks it sees the other move and that messages go both ways.' },
+    { id: 'fallback', title: 'With direct links blocked, two players reach each other through the relay in under 3 s', seconds: 30, tags: ['smoke', 'multiplayer'],
+      description: 'Opens a room with direct (peer to peer) links blocked, as ?p2p=blocked does: a host, then a player. Times the player from the join call to seeing the host on the relay (under 3 s), checks both sides see each other and a message arrives, and that the player\'s log says the switch in one line.' },
     { id: 'errors', title: 'Every error has a code, a plain message and a docs link, and the docs page lists every code', seconds: 40, tags: ['full'],
       description: 'Makes the service refuse a dozen requests (an unknown route, bad JSON, a bad room, a missing key, a bot ticket, an old SDK...) and checks each answer has code, message and a docs link that matches the code, then opens the docs page and checks it lists every code the service says it has.' },
     { id: 'arena', title: 'Names and dots stay inside the arena, and players on one spot stay apart', seconds: 60, tags: ['full'],
@@ -201,6 +203,37 @@ export function installNetPlaytest(o) {
   }
 
   /** Join: under 1 s, "Joining <room>…" in the arena until then, the buttons that need a room off until then (o.joined() gives what the page recorded). */
+  async function fallback() {
+    if (!o.openBlocked) { problem('bug', 'this page cannot open a room with direct links blocked'); return finish('error'); }
+    const LIMIT_MS = 3000;
+    const room = `fb-${Math.random().toString(36).slice(2, 8)}`;
+    let host = null, guest = null;
+    try {
+      // Real input on this page too (touch at phone size, arrow keys otherwise), while the blocked room forms.
+      if (o.drive) o.drive(step).catch(() => {});
+      host = await o.openBlocked(room, 'Host', false);
+      let ms = 0;
+      await check('A player joins a room whose direct links are blocked and sees the host in under 3 s', async () => {
+        const t0 = performance.now();
+        guest = await o.openBlocked(room, 'Player', true);
+        await until(() => guest.transport === 'relay' && guest.peers.has(host.id), 8000, () => `the relay with the host in the list (transport ${guest.transport}, peers ${guest.peers.size})`);
+        ms = Math.round(performance.now() - t0);
+        metric('fallbackMs', ms); event('fallback', `${ms} ms`);
+        if (ms >= LIMIT_MS) throw new Error(`took ${ms} ms, the limit is ${LIMIT_MS} ms`);
+        return `${ms} ms`;
+      });
+      await check('Both players are on the relay and see each other', async () => {
+        await until(() => host.transport === 'relay' && host.peers.has(guest.id) && guest.peers.has(host.id), 5000, () => `both on the relay (${host.transport} / ${guest.transport})`);
+        return `${host.transport} / ${guest.transport}`;
+      });
+      await check('A message from the host reaches the player', async () => {
+        let got = false; guest.when('hn-pt-fallback', () => { got = true; });
+        const t = setInterval(() => { try { host.send('hn-pt-fallback', { hi: 1 }); } catch { /* not yet */ } }, 200);
+        try { await until(() => got, 4000, 'the host\'s message'); } finally { clearInterval(t); }
+        return 'delivered';
+      });
+    } finally { for (const n of [guest, host]) { try { await n?.leave(); } catch { /* gone */ } } }
+  }
   async function joinScenario() {
     if (!o.joined) { problem('bug', 'this page has no join record to check'); return finish('error'); }
     const JOIN_MS = 1000;
@@ -408,7 +441,7 @@ export function installNetPlaytest(o) {
       event('start', id); event('scene', 'Demo'); show();
       try {
         if (!sc) { problem('bug', `no playtest scenario "${id}" (have: ${scenarios.map((s) => s.id).join(', ')})`); return finish('error'); }
-        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : id === 'join' ? joinScenario() : id === 'errors' ? errors() : smoke());
+        await (id === 'two-players' ? twoPlayers() : id === 'arena' ? arena() : id === 'fallback' ? fallback() : id === 'join' ? joinScenario() : id === 'errors' ? errors() : smoke());
       } catch (e) {
         if (mine === run && !mine.done) { problem('bug', `bot error: ${e?.message ?? e}`); log(String(e?.stack ?? e)); finish('error'); }
       } finally {

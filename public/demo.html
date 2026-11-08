@@ -59,7 +59,9 @@
   const room = q.get('room') || `demo-${Math.random().toString(36).slice(2, 7)}`;
   if (!q.get('room')) history.replaceState(null, '', `?room=${room}${q.get('t') ? `&t=${q.get('t')}` : ''}`);
   const transport = q.get('t') || 'auto';
-  const p2pMax = Number(q.get('p2p') || 8);
+  // ?p2p=blocked: direct links are switched off, so the room has to fall back to the relay (the playtest proves it); ?p2p=N is the peer to peer size.
+  const blocked = q.get('p2p') === 'blocked';
+  const p2pMax = blocked ? 8 : Number(q.get('p2p') || 8);
   const $ = (id) => document.getElementById(id);
   $('room').textContent = room; $('p2pmax').textContent = p2pMax;
   const log = (s) => { const el = $('log'); el.textContent = `${new Date().toLocaleTimeString()} ${s}\n${el.textContent}`.slice(0, 4000); };
@@ -74,12 +76,13 @@
   cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); });
   cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) moveTo(e); });
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
+  const direct = blocked ? false : undefined;
   // Joining starts first and alone: the ticket and the socket don't wait for the playtest bot's file (they used to, one after the other).
   // `joinInfo` is what the playtest's "join" scenario reads: how long the join took, what the arena said, and which buttons were off until then.
   let net = null;
   const joinInfo = { ms: null, text: '', botsOff: null, migrateOff: null, failed: '' };
   const joinT0 = performance.now();
-  const joining = join(room, { project: 'netdemo', endpoint: location.origin, transport, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
+  const joining = join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: q.get('name') || `Guest ${Math.floor(Math.random() * 900 + 100)}`, config });
   joining.catch((e) => { joinInfo.failed = String(e?.message || e); }); // the arena says so (the handler below logs it)
   // The join event: the room's first state is here. The buttons that need a room come on, the arena draws the players.
   // (Attached at the top, so nothing else on the page, like loading the playtest bot, can hold it back.)
@@ -106,7 +109,7 @@
   $('bots').onclick = async () => {
     // Bots: more players in this page (no singleton), wandering.
     for (let i = 0; i < 5; i++) {
-      const b = await join(room, { project: 'netdemo', endpoint: location.origin, transport, name: `Bot ${bots.length + 1}`, role: 'player', config, leaveOnHide: true, sub: `bot-${Math.random()}` });
+      const b = await join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: `Bot ${bots.length + 1}`, role: 'player', config, leaveOnHide: true, sub: `bot-${Math.random()}` });
       bots.push({ net: b, x: Math.random() * W, y: Math.random() * H, a: Math.random() * 6.28 });
       $('botn').textContent = bots.length;
     }
@@ -249,7 +252,8 @@
   // On p2p the smoke also moves the room to the relay and checks again.
   const playtest = installNetPlaytest({
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
-    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
+    openBlocked: async (r, name, logged) => { const n = await join(r, { project: 'netdemo', endpoint: location.origin, transport: 'auto', direct: false, name, role: 'player', config: { p2pMax: 8, maxPlayers: 64, profile: 'light' }, sub: `fb-${Math.random()}`, log: false }); if (logged) n.when('transport', (e) => { if (e.why === 'links failed') log("Couldn't connect directly, switched to relay"); }); return n; },
+    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
     drive: async (step) => { if (phone()) { await touchDrag([[0.3, 0.4], [0.4, 0.4], [0.5, 0.45], [0.6, 0.55], [0.65, 0.6]], 900); } else { await key('ArrowRight', 900); await key('ArrowDown', 700); } await step(100); },
     cornerDrive: async () => { if (phone()) await touchDrag([[0.5, 0.5], [0.25, 0.25], [0.02, 0.02], [0, 0]], 600); else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); } },
     view: () => window.hawkesNetDemoView,
