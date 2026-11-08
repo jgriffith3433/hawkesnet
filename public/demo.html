@@ -8,7 +8,9 @@
 <style>
   :root { --warn: #fbbf24; }
   main { font-size: 15px; line-height: 1.45; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 320px; }
+  main > * { min-width: 0; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { main { padding: 12px 12px 32px; } .row button { flex: 1 1 140px; min-height: 44px; } #peers { max-height: 200px; } }
   h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 0; color: var(--muted); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
   canvas { width: 100%; aspect-ratio: 16 / 10; display: block; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); touch-action: none; }
@@ -28,7 +30,7 @@
 <main>
   <section class="card">
     <h1>Hawkes Net</h1>
-    <p>Everyone on this page with the same room plays together. Move with the arrow keys or drag. Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
+    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena. Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
     <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
     <div class="row">
       <button class="primary" id="share">Copy invite link</button>
@@ -67,7 +69,10 @@
   addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) { keys.add(e.key); e.preventDefault(); } });
   addEventListener('keyup', (e) => keys.delete(e.key));
   const cv = $('c'), g = cv.getContext('2d');
-  cv.addEventListener('pointermove', (e) => { if (!e.buttons) return; const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); });
+  // Pointer events cover mouse, pen and touch: a press or tap puts your player there, dragging carries it (touch-action: none on the canvas keeps the page from scrolling).
+  const moveTo = (e) => { const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); };
+  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); });
+  cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) moveTo(e); });
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
   // Joining starts first and alone: the ticket and the socket don't wait for the playtest bot's file (they used to, one after the other).
   // `joinInfo` is what the playtest's "join" scenario reads: how long the join took, what the arena said, and which buttons were off until then.
@@ -231,14 +236,22 @@
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
   const { siteChecks, addSiteScenario } = await import('/site-playtest.mjs'); // the site checks: the `site` scenario, and the end of `smoke`
+  // On a phone-sized page the bot plays by touch: a finger pressed on the arena and dragged (pointer events, pointerType touch).
+  const phone = () => innerWidth <= 640;
+  const touchDrag = async (path, ms) => {
+    const r = cv.getBoundingClientRect(), at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true });
+    cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(path[0]), button: 0, buttons: 1 }));
+    for (let i = 1; i < path.length; i++) { await new Promise((res) => setTimeout(res, ms / path.length)); cv.dispatchEvent(new PointerEvent('pointermove', { ...at(path[i]), buttons: 1 })); }
+    cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
+  };
   const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
   const playtest = installNetPlaytest({
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
-    drive: async (step) => { await key('ArrowRight', 900); await key('ArrowDown', 700); await step(100); },
-    cornerDrive: async () => { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); },
+    drive: async (step) => { if (phone()) { await touchDrag([[0.3, 0.4], [0.4, 0.4], [0.5, 0.45], [0.6, 0.55], [0.65, 0.6]], 900); } else { await key('ArrowRight', 900); await key('ArrowDown', 700); } await step(100); },
+    cornerDrive: async () => { if (phone()) await touchDrag([[0.5, 0.5], [0.25, 0.25], [0.02, 0.02], [0, 0]], 600); else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); } },
     view: () => window.hawkesNetDemoView,
     joined: () => ({ ms: joinInfo.ms, text: joinInfo.text, botsOffWhileJoining: joinInfo.botsOff, migrateOffWhileJoining: joinInfo.migrateOff, botsOn: !$('bots').disabled, migrateOn: !$('migrate').disabled, room, failed: joinInfo.failed }),
     myPos: () => [pos.x, 0, pos.y],
