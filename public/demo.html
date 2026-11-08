@@ -4,19 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hawkes Net demo</title>
+<link rel="stylesheet" href="/site.css">
 <style>
-  :root { --bg: #f6f7f9; --card: #fff; --ink: #14161b; --muted: #5d6470; --line: #e3e6ea; --accent: #2f6fed; --ok: #16a34a; --warn: #d97706; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #101216; --card: #171a20; --ink: #eef0f3; --muted: #9aa1ad; --line: #272b33; --accent: #6c9bff; } }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.45 Inter, system-ui, sans-serif; background: var(--bg); color: var(--ink); }
-  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 320px; }
+  :root { --warn: #fbbf24; }
+  main { font-size: 15px; line-height: 1.45; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 320px; }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
   h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 0; color: var(--muted); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
   canvas { width: 100%; aspect-ratio: 16 / 10; display: block; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); touch-action: none; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { color: var(--muted); cursor: default; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; } dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
   ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
   li { display: flex; gap: 8px; align-items: center; } .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
@@ -186,9 +185,10 @@
     window.hawkesNetDemoView = { w: W, h: H, items: [], joining: joinInfo.text };
   }
   const drawJoining = () => { paintJoining(); requestAnimationFrame(frame); };
-  let last = performance.now(), lastStats = { d: 0, u: 0, t: performance.now() };
+  let last = performance.now(), lastPanel = -1e9, lastStats = { d: 0, u: 0, t: performance.now() };
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    if (t - lastPanel >= 500) { lastPanel = t; refreshPanel(); }
     if (!net) return drawJoining();
     const sp = 260 * dt;
     if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
@@ -208,7 +208,8 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  setInterval(() => {
+  // The side panel refreshes twice a second from the frame loop (no timer; nothing here makes a request).
+  function refreshPanel() {
     if (!net) return;
     const s = net.stats();
     const t = performance.now(), dts = (t - lastStats.t) / 1000;
@@ -226,7 +227,7 @@
       li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? (p.route === 'direct' ? 'linked' : 'signal') : p.route; // 'linked' only once the WebRTC channel is open
       $('peers').appendChild(li);
     }
-  }, 500);
+  }
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
   const key = (k, ms) => new Promise((r) => { dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
@@ -263,5 +264,6 @@
     },
   });
 </script>
+<script src="/site.js" defer></script>
 </body>
 </html>
