@@ -120,7 +120,7 @@ export function errorsMarkdown() {
 export function errorsHtml() {
   const rows = ERROR_CODES.map((c) => `<tr id="${c}"><td><a href="#${c}"><code>${c}</code></a></td><td>${ERRORS[c].status}</td><td>${esc(ERRORS[c].title)}</td><td>${esc(ERRORS[c].fix)}</td></tr>`).join('\n');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hawkes Net errors</title>
-<link rel="stylesheet" href="/site.css"><style>main{max-width:60rem;margin:0 auto;padding:1rem 1rem 3rem}table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--line);padding:.45em .6em;text-align:left;vertical-align:top}tr:target{background:var(--card);box-shadow:inset 3px 0 0 var(--accent)}</style></head><body><main>
+<link rel="stylesheet" href="/site.css"><style>main{max-width:60rem;margin:0 auto;padding:1rem 1rem 3rem}table{border-collapse:collapse;width:100%}@media(max-width:640px){table{display:block;overflow-x:auto}}td,th{border-bottom:1px solid var(--line);padding:.45em .6em;text-align:left;vertical-align:top}tr:target{background:var(--card);box-shadow:inset 3px 0 0 var(--accent)}</style></head><body><main>
 <h1>Hawkes Net errors</h1>
 <p>Every error the service answers with has a stable <code>code</code>, a plain <code>message</code> and a <code>docs</code> link to its row below.</p>
 <pre>{ "code": "room_invalid", "message": "room is 1 to 64 of letters, digits and / _ . -", "docs": "${docsBase()}/docs/errors#room_invalid", "error": "..." }</pre>

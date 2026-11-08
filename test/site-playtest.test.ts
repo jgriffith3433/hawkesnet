@@ -11,6 +11,7 @@ const hub = await startTestHub();
 after(async () => { await hub.stop(); });
 
 const ORIGIN = 'https://net.example';
+const GOOD_PHONE = { width: 390, scrollWidth: 390, menuShown: true, navHiddenBefore: true, navShownAfter: true, expandedAfter: true, minFont: 13, wideBlocks: 0 };
 const GOOD_HEADER = ['Home', 'Docs', 'Quickstart', 'Demo'].map((text, i) => ({ text, path: ['/', '/docs/errors', '/quickstart', '/demo'][i] }));
 
 test('judgeStatus: ok or degraded with a version', () => {
@@ -33,7 +34,7 @@ test('judgeHeader and judgeCopy say what is missing', () => {
 });
 
 /** Runs siteChecks with a fake service; returns the checks (name -> { ok, why }), the metrics and the fetched addresses. */
-async function runChecks(opts: { status?: unknown; pages?: Record<string, string>; read?: (p: string) => Promise<unknown> } = {}) {
+async function runChecks(opts: { status?: unknown; pages?: Record<string, string>; read?: (p: string) => Promise<unknown>; phoneRead?: (p: string) => Promise<unknown> } = {}) {
   const fetched: string[] = [];
   const pages: Record<string, string> = opts.pages ?? {
     '/home': '<a href="/docs/errors">d</a><a href="/quickstart">q</a><a href="https://github.com/x">g</a>',
@@ -53,13 +54,13 @@ async function runChecks(opts: { status?: unknown; pages?: Record<string, string
     try { lines[name] = { ok: true, why: String(await fn() ?? '') }; } catch (e) { lines[name] = { ok: false, why: String((e as Error).message) }; }
   };
   const read = opts.read ?? (async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }));
-  await m.siteChecks({ check, metric: (k: string, v: number) => { metrics[k] = v; }, origin: ORIGIN, fetchFn, read: read as never });
+  await m.siteChecks({ check, metric: (k: string, v: number) => { metrics[k] = v; }, origin: ORIGIN, fetchFn, read: read as never, phoneRead: (opts.phoneRead ?? (async () => GOOD_PHONE)) as never });
   return { lines, metrics, fetched };
 }
 
 test('siteChecks: a healthy site passes every check and reports status, version and links in metrics', async () => {
   const { lines, metrics, fetched } = await runChecks();
-  assert.equal(Object.keys(lines).length, 1 + 3 * 3, 'status plus links, header and copy for each of home, docs and quickstart');
+  assert.equal(Object.keys(lines).length, 1 + 3 * 3 + 4, 'status, links, header and copy for each of home, docs and quickstart, and four phone-size checks');
   for (const [name, l] of Object.entries(lines)) assert.ok(l.ok, `${name}: ${l.why}`);
   assert.match(lines['Status and version: the service is ok or degraded and has a version'].why, /status ok, version 1\.4\.0/);
   assert.deepEqual([metrics.status, metrics.versionMajor, metrics.versionMinor, metrics.versionPatch], [1, 1, 4, 0]);
@@ -98,7 +99,7 @@ test('addSiteScenario: the contract lists site, runs it, reports metrics; other 
     return { ok: true, status: 200, text: async () => '<a href="/demo">d</a>', body: null };
   };
   (globalThis as any).location = { origin: ORIGIN, host: 'net.example' };
-  m.addSiteScenario(api, { origin: ORIGIN, fetchFn, read: async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }), where: 'net.example' });
+  m.addSiteScenario(api, { origin: ORIGIN, fetchFn, read: async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }), phoneRead: async () => GOOD_PHONE, where: 'net.example' });
   assert.deepEqual(api.scenarios().map((s: any) => s.id), ['smoke', 'site']);
   await api.start('smoke');
   assert.deepEqual(calls, ['smoke']);
@@ -125,4 +126,15 @@ test('the demo page wires the site scenario and ends smoke with the checks; the 
   const r = await fetch(`${hub.url}/site-playtest.mjs`);
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-type') ?? '', /javascript/);
+});
+
+test('judgePhone: passes a folded, readable page and names what is wrong otherwise', async () => {
+  const m = await import('../public/site-playtest.mjs');
+  assert.match(m.judgePhone(GOOD_PHONE), /no sideways scroll/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, scrollWidth: 520 }), /scrolls sideways/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, menuShown: false }), /no Menu/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, navHiddenBefore: false }), /not folded/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, navShownAfter: false }), /did not open/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, minFont: 10 }), /too small|as small as 10/);
+  assert.throws(() => m.judgePhone({ ...GOOD_PHONE, wideBlocks: 2 }), /scroll inside/);
 });

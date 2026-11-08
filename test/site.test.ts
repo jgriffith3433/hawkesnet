@@ -50,3 +50,13 @@ test('/site.css and /site.js are served, and the script makes no request and has
   for (const label of ['Home', 'Docs', 'Quickstart', 'Demo']) assert.match(js, new RegExp(`'${label}'`));
   assert.match(js, /querySelectorAll\?\.\('pre'\)/);
 });
+
+test('phone size: the header folds into a Menu button, wide things scroll inside themselves, the demo takes pointer input', async () => {
+  const js = read('site.js'), demo = read('demo.html');
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.site-header nav \{ display: none/);
+  assert.match(js, /class="menu"[^]*aria-expanded/);
+  assert.match(demo, /addEventListener\('pointerdown'/);
+  assert.match(demo, /addEventListener\('pointermove'/);
+  assert.match(demo, /touch-action: none/);
+  assert.match(await (await fetch(hub.endpoint + '/docs/errors')).text(), /table\{display:block;overflow-x:auto\}/);
+});

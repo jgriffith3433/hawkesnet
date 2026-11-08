@@ -9,6 +9,8 @@
 import { checkLinks } from './landing-playtest.mjs';
 
 export const SITE_CHECK_PAGES = [['Home', '/home'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart']];
+export const PHONE_PAGES = [['Home', '/home'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart'], ['Demo', '/demo']];
+export const PHONE_W = 390;
 export const HEADER_LINKS = ['Home', 'Docs', 'Quickstart', 'Demo'];
 
 /** The status read: health must be ok or degraded and the version a version. Returns { health, version } or throws. */
@@ -43,6 +45,54 @@ export function judgeCopy(blocks) {
   return `${blocks.length} code blocks, each with a Copy button`;
 }
 
+/**
+ * `p` is what phoneReader measured at 390 px: { width, scrollWidth, menuShown, navHiddenBefore, navShownAfter, expandedAfter, minFont, wideBlocks }.
+ * No sideways scroll, a Menu button that opens the nav on tap, text of 12 px or more, and no code block or table wider than the page that doesn't scroll itself.
+ */
+export function judgePhone(p) {
+  if (!p) throw new Error('no phone measure for the page');
+  if (p.scrollWidth > p.width) throw new Error(`the page scrolls sideways at ${p.width} px: it is ${p.scrollWidth} px wide`);
+  if (!p.menuShown) throw new Error('no Menu button at phone size');
+  if (!p.navHiddenBefore) throw new Error('the nav is not folded before the Menu is tapped');
+  if (!p.navShownAfter || !p.expandedAfter) throw new Error('tapping Menu did not open the nav');
+  if (p.minFont < 12) throw new Error(`text as small as ${p.minFont} px (wanted 12 or more)`);
+  if (p.wideBlocks) throw new Error(`${p.wideBlocks} code block(s) or table(s) don't scroll inside themselves`);
+  return `no sideways scroll at ${p.width} px, Menu opens the nav, smallest text ${p.minFont} px`;
+}
+
+/** Opens `path` in a phone-wide frame, taps Menu, and measures the page. */
+export async function phoneReader(path) {
+  const frame = document.createElement('iframe');
+  frame.title = `Hawkes Net ${path}, at phone size`;
+  frame.style.cssText = `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:844px;border:0`;
+  frame.src = path;
+  const loaded = new Promise((res) => frame.addEventListener('load', res, { once: true }));
+  document.body.appendChild(frame);
+  try {
+    await Promise.race([loaded, new Promise((_, rej) => setTimeout(() => rej(new Error(`${path} did not load in 20 s`)), 20000))]);
+    const d = frame.contentDocument, w = frame.contentWindow;
+    const menu = d.querySelector('header.site-header .menu'), nav = d.querySelector('header.site-header nav');
+    const shown = (el) => !!el && w.getComputedStyle(el).display !== 'none';
+    const out = { width: w.innerWidth, menuShown: shown(menu), navHiddenBefore: !shown(nav) };
+    menu?.click();
+    out.navShownAfter = shown(nav); out.expandedAfter = menu?.getAttribute('aria-expanded') === 'true';
+    menu?.click();
+    out.scrollWidth = d.documentElement.scrollWidth;
+    let min = 99;
+    const walker = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const el = n.parentElement;
+      if (!n.textContent.trim() || !el || ['SCRIPT', 'STYLE', 'CANVAS'].includes(el.tagName) || !el.getClientRects().length) continue;
+      const cs = w.getComputedStyle(el);
+      if (cs.visibility === 'hidden') continue;
+      min = Math.min(min, parseFloat(cs.fontSize));
+    }
+    out.minFont = min === 99 ? 0 : Math.round(min * 10) / 10;
+    out.wideBlocks = [...d.querySelectorAll('pre, table')].filter((e) => e.getBoundingClientRect().right > out.width + 1 && !['auto', 'scroll'].includes(w.getComputedStyle(e).overflowX)).length;
+    return out;
+  } finally { frame.remove(); }
+}
+
 /** Opens `path` in a frame under the playtest's page, reads the header and the code blocks once the page loaded, and removes the frame. */
 export async function frameReader(path, { origin = location.origin } = {}) {
   const frame = document.createElement('iframe');
@@ -66,7 +116,7 @@ export async function frameReader(path, { origin = location.origin } = {}) {
  * `fetchFn` is fetch, `read(path)` is frameReader (both replaced in tests), `log` and `progress` are optional.
  */
 export async function siteChecks({ check, metric, log = () => {}, progress = () => {}, note = () => {}, origin = location.origin,
-  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader }) {
+  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader }) {
   await check('Status and version: the service is ok or degraded and has a version', async () => {
     const res = await fetchFn(`${origin}/v1/net/status`);
     if (!res.ok) throw new Error(`/v1/net/status answered ${res.status}`);
@@ -106,7 +156,18 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
       metric(`${key}CodeBlocks`, page.blocks.length);
       return why;
     });
-    progress(0.2 + 0.8 * (++i / SITE_CHECK_PAGES.length));
+    progress(0.2 + 0.5 * (++i / SITE_CHECK_PAGES.length));
+  }
+  // Phone size (390 px wide): each page once in a narrow frame.
+  let j = 0;
+  for (const [name, path] of PHONE_PAGES) {
+    await check(`${name} (${path}) at phone size (${PHONE_W} px): no sideways scroll, the nav folds into a Menu that opens on tap, text is readable`, async () => {
+      const p = await phoneRead(path);
+      const why = judgePhone(p);
+      metric(`${name.toLowerCase()}PhoneOverflow`, Math.max(0, p.scrollWidth - p.width)); metric(`${name.toLowerCase()}MinFont`, p.minFont);
+      return why;
+    });
+    progress(0.7 + 0.3 * (++j / PHONE_PAGES.length));
   }
 }
 
@@ -115,9 +176,9 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
  * others: scenarios() lists it, start('site') runs the checks above on their own, and state(), report() and stop() answer
  * for it while it is the current run. Every other id goes to the original start.
  */
-export function addSiteScenario(api, { origin = location.origin, fetchFn, read, where = location.host } = {}) {
+export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, where = location.host } = {}) {
   const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block', seconds: 40, tags: ['smoke', 'site'],
-    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/errors and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block. Also runs at the end of the smoke scenario.' };
+    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/errors and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
   let run = null;
   const r1 = (n) => Math.round(n * 10) / 10;
@@ -165,7 +226,7 @@ export function addSiteScenario(api, { origin = location.origin, fetchFn, read, 
     const me = run;
     event('start', 'site'); event('scene', 'Demo'); show();
     try {
-      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, note: (s) => { me.note = s; },
+      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, note: (s) => { me.note = s; },
         log: (l) => { me.log.push(`${r1(now())}s ${l}`); if (me.log.length > 300) me.log.shift(); },
         progress: (p) => { me.state.progress = Math.max(0, Math.min(1, p)); me.moved = performance.now(); } });
       if (typeof location !== 'undefined' && location.origin !== origin) problem('the bot left the Hawkes Net site');
