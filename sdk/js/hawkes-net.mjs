@@ -176,6 +176,7 @@ class Room {
     this.ws = null; this.wsCodec = null; this.resume = null; this.relayUrl = null; this.ice = DEFAULT_ICE;
     this.p2p = null;
     this.closed = false; this.lastBeat = wall(); this.sleptUntil = 0; this.retry = 0; this.pingAt = 0;
+    this._draining = false; // node pushed a draining notice: skip resume and retry tickets quickly while it restarts
     this.timers = []; // stop() functions of background clock jobs
     this.away = false; this._hiddenSince = 0; this._autoAway = false;
     this.sub = o.sub || stableSub();
@@ -368,7 +369,11 @@ class Room {
     this._status('reconnecting');
     this.st.reconnects++;
     this._teardownP2p();
-    const wait = Math.min(15_000, 500 * 2 ** Math.min(5, this.retry++));
+    // After a draining notice the room is gone: skip the doomed resume and ask for a ticket soon.
+    if (this._draining) this.resume = null;
+    const wait = this._draining
+      ? Math.min(800, 150 * 2 ** Math.min(3, this.retry++))
+      : Math.min(15_000, 500 * 2 ** Math.min(5, this.retry++));
     setTimeout(() => {
       if (this.closed || this.ws) return;
       if (this.resume) this._connect(`r=${encodeURIComponent(this.resume)}`);
@@ -387,8 +392,24 @@ class Room {
       // A real no (the game's server or Gen refused this player: removed, closed, expired): stop, don't ask forever.
       const st = Number(e?.status) || 0;
       if (st >= 400 && st < 500 && st !== 408 && st !== 429) { this._problem('refused', e?.message || String(st)); return void this.leave('refused'); }
-      setTimeout(() => void this._rejoin(), 5000);
+      // While a node restarts, tickets 503/fail for a moment: retry quickly (no polling loop; only on this failure).
+      const wait = this._draining ? Math.min(800, 150 * 2 ** Math.min(3, this.retry++)) : 5000;
+      setTimeout(() => void this._rejoin(), wait);
     }
+  }
+  /** Node is going away (deploy / SIGTERM): drop the resume token and rejoin this room name with a fresh ticket at once. */
+  _onDrain(why) {
+    if (this.closed || this._draining) return;
+    this._draining = true;
+    this.resume = null;
+    this.retry = 0;
+    this._status('reconnecting');
+    this.st.reconnects++;
+    this._teardownP2p();
+    const old = this.ws;
+    this.ws = null;
+    try { old?.close(); } catch {}
+    void this._rejoin();
   }
 
   // ================================================================ the socket: relay bundles, hellos, control
@@ -410,7 +431,7 @@ class Room {
   }
 
   _hello(h) {
-    this.retry = 0; this._resuming = false;
+    this.retry = 0; this._resuming = false; this._draining = false;
     if (h.resume) this.resume = h.resume;
     if (h.cfg) this.config = h.cfg;
     const resumed = Boolean(h.resumed);
@@ -512,7 +533,8 @@ class Room {
           if (m.event) core.event(this.p2p.hostRoom, m.event.name, m.event.data);
         }
         return;
-      case 'move': this.resume = null; return void this._rejoin();
+      case 'draining': return this._onDrain(m.why || 'node restart');
+      case 'move': return this._onDrain(m.why || 'moved');
     }
   }
 

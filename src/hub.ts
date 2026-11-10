@@ -116,6 +116,7 @@ export async function startHub(o: HubOptions = {}) {
   const orbsPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'orbs-playtest.mjs');
   const feedbackPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'feedback-playtest.mjs');
   const phonePlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'phone-playtest.mjs');
+  const drainPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'drain-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
@@ -189,6 +190,10 @@ export async function startHub(o: HubOptions = {}) {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(phonePlaytest));
     }
+    if (route === '/drain-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(drainPlaytest));
+    }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(errorBody('not_found')));
@@ -208,10 +213,11 @@ export async function startHub(o: HubOptions = {}) {
   let stopping: Promise<void> | null = null;
   const stop = () => (stopping ??= (async () => {
     clearInterval(usageTimer);
+    projects.stopSampler();
+    // Push the draining notice *before* closing sockets, so clients skip the doomed resume and rejoin at once.
+    await svc.stopNode();
     server.close();
     server.closeAllConnections();
-    projects.stopSampler();
-    await svc.stopNode(); // drains the rooms and reports their last usage
     await flushUsage().catch(() => {});
   })());
   return { server, port, url: `http://127.0.0.1:${port}`, node, stop, usageWaiting: () => outbox.length };
