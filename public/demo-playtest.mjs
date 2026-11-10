@@ -343,7 +343,19 @@ export function installNetPlaytest(o) {
 
   async function twoPlayers() {
     let main = o.main();
-    const room = new URLSearchParams(location.search).get('room');
+    const q = new URLSearchParams(location.search);
+    const room = q.get('room');
+    const peer = q.get('peer');
+    // Gen's peers>1 path puts ?room=<id>&peer=0..n-1 on every browser (peerUrl). Without ?peer=, Studio opened
+    // one page only: "Another player is in the room" always times out — that is runner config, not a Net join bug.
+    // (Gen peer-mode reports also leave `pages: []` by design; do not treat an empty pages list as proof alone.)
+    const okPeerPage = await check('Studio opened a peer browser (?peer=)', async () => {
+      if (peer == null || peer === '') {
+        throw new Error('two-players needs Studio peers≥2 (each browser gets ?room=&peer=); this URL has no ?peer=, so the second page never started — runner fault, not a Net join bug');
+      }
+      return `peer ${peer}${room ? ` in room ${room}` : ''}`;
+    });
+    if (!okPeerPage) return finish('lost');
     if (!room) problem('warning', 'no ?room= on the address: playing in the shared demo room, where strangers may be');
     const okConnect = await check(`Connected to ${o.where ?? 'Hawkes Net'}`, async () => {
       const ms = await until(() => { main = o.main(); if (main) wire(main, 'main'); return isOnline(main); }, 20000, () => `the room to say online (${main ? `status ${main.status ?? '?'}` : "the page's client wasn't made"}${main?.lastProblem || lastProblem ? `, last problem: ${main?.lastProblem || lastProblem}` : ''})`);
@@ -354,8 +366,9 @@ export function installNetPlaytest(o) {
     progress(0.2);
     const others = () => [...main.peers.keys()].filter((id) => id !== main.id);
     let other = null;
+    metric('players', 1);
     const okMeet = await check('Another player is in the room', async () => {
-      const ms = await until(() => others().length > 0, 60000, 'another browser to join');
+      const ms = await until(() => others().length > 0, 60000, () => `another browser to join (?peer=${peer} still alone; if Gen's players list has only one entry this is runner infra)`);
       other = others()[0];
       metric('players', others().length + 1); metric('meetMs', Math.round(ms));
       return `${others().length + 1} players`;

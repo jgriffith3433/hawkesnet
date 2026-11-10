@@ -35,10 +35,14 @@ for (const transport of ['auto', 'relay']) {
   });
 }
 
-// Pins the two-players criterion: Studio peers open two browsers on one ?room=demo-<id>; both must see each other.
-// A playtest with an empty pages list means the second browser never opened (runner infra), not a join bug here.
+// Pins the two-players criterion: Studio peers open two browsers on one ?room=; both must see each other.
+// Gen's peers>1 path adds ?peer=0..n-1 (and always leaves report pages:[]). A two-players run without ?peer= is
+// runner config (one browser), not a Net join bug — demo-playtest twoPlayers() hard-fails on that first.
 test('two players in a demo-* room see each other (Studio two-players peers path)', async () => {
   assert.match(page, /`demo-\$\{Math\.random\(\)\.toString\(36\)\.slice\(2, 7\)\}`/, 'the demo mints demo-<id> rooms');
+  const bot = fs.readFileSync(new URL('../public/demo-playtest.mjs', import.meta.url), 'utf8');
+  assert.match(bot, /Studio opened a peer browser \(\?peer=\)/, 'twoPlayers requires Gen\'s ?peer= before waiting for a roster mate');
+  assert.match(bot, /two-players needs Studio peers≥2/, 'the hard-fail names runner fault, not a Net join bug');
   const room = `demo-meet-${Math.random().toString(36).slice(2, 7)}`;
   const cfg = { p2pMax: 8, maxPlayers: 64, profile: 'light' };
   const o = (name: string, sub: string) => ({
