@@ -36,6 +36,7 @@
       <button class="primary" id="share">Copy invite link</button>
       <button id="bots" disabled>Add 5 bots</button>
       <button id="migrate" disabled>Move to the relay</button>
+      <button id="mute" type="button" aria-pressed="false">Mute</button>
       <button id="leave">Leave</button>
     </div>
   </section>
@@ -69,15 +70,126 @@
   const W = 960, H = 600;
   const pos = { x: 100 + Math.random() * 760, y: 100 + Math.random() * 400 };
   const keys = new Set();
-  addEventListener('keydown', (e) => { if (e.key.startsWith('Arrow')) { keys.add(e.key); e.preventDefault(); } });
+  // Moment feedback (quality 6d): particles/+1/pulse/sound on collect, join pop-in, leave fade. Audio only after a real tap or key; Mute remembered in localStorage.
+  const MUTE_KEY = 'hawkes-net-demo-mute';
+  const MAX_PARTICLES = 48, BURST_N = 10, POP_MS = 700, PULSE_MS = 280, JOIN_MS = 560, LEAVE_MS = 420;
+  let audioCtx = null, audioUnlocked = false, soundsPlayed = 0, muted = false;
+  try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { /* private mode */ }
+  const particles = [], pops = [], leavers = [];
+  let pulseUntil = 0, lastCollect = null, canvasDpr = 1;
+  const peerIn = new Map(); // peer id -> join start time (pop-in ring)
+  const recentJoins = [], recentLeaves = []; // playtest reads these after the short FX finishes
+  const syncMuteBtn = () => { const b = $('mute'); if (!b) return; b.textContent = muted ? 'Unmute' : 'Mute'; b.setAttribute('aria-pressed', muted ? 'true' : 'false'); };
+  const setMuted = (on) => {
+    muted = !!on;
+    try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch { /* ignore */ }
+    syncMuteBtn();
+  };
+  const unlockAudio = () => {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    } catch { audioCtx = null; }
+  };
+  const playPickup = () => {
+    if (!audioUnlocked || muted || !audioCtx) return;
+    try {
+      const t0 = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(740, t0);
+      osc.frequency.exponentialRampToValueAtTime(1180, t0 + 0.07);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.14, t0 + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.13);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + 0.14);
+      soundsPlayed++;
+    } catch { /* autoplay / closed */ }
+  };
+  const collectFx = (x, y) => {
+    const at = performance.now();
+    while (particles.length + BURST_N > MAX_PARTICLES) particles.shift();
+    for (let i = 0; i < BURST_N; i++) {
+      const a = (Math.PI * 2 * i) / BURST_N + Math.random() * 0.4, sp = 60 + Math.random() * 140;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.35 + Math.random() * 0.25, age: 0, r: 2.5 + Math.random() * 2.5 });
+    }
+    pops.push({ x, y, age: 0, life: POP_MS / 1000 });
+    pulseUntil = at + PULSE_MS;
+    playPickup();
+    lastCollect = { x, y, at, particles: BURST_N, pop: true, pulseMs: PULSE_MS, sound: audioUnlocked && !muted };
+  };
+  const tickFx = (dt) => {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i]; p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92;
+      if (p.age >= p.life) particles.splice(i, 1);
+    }
+    for (let i = pops.length - 1; i >= 0; i--) { pops[i].age += dt; if (pops[i].age >= pops[i].life) pops.splice(i, 1); }
+    for (let i = leavers.length - 1; i >= 0; i--) { if (performance.now() - leavers[i].t0 >= LEAVE_MS) leavers.splice(i, 1); }
+    for (const [id, t0] of peerIn) if (performance.now() - t0 >= JOIN_MS) peerIn.delete(id);
+  };
+  const drawFx = (now, ink) => {
+    const pulseLeft = pulseUntil - now;
+    if (pulseLeft > 0) {
+      const u = pulseLeft / PULSE_MS;
+      g.fillStyle = `rgba(120, 220, 255, ${0.18 * u})`;
+      g.fillRect(0, 0, W, H);
+    }
+    for (const p of particles) {
+      const a = 1 - p.age / p.life;
+      g.beginPath(); g.arc(p.x, p.y, p.r * (0.6 + 0.4 * a), 0, 7);
+      g.fillStyle = `rgba(160, 245, 255, ${0.85 * a})`; g.fill();
+    }
+    g.font = 'bold 22px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const p of pops) {
+      const u = p.age / p.life, rise = 28 * u, a = u < 0.2 ? u / 0.2 : 1 - (u - 0.2) / 0.8;
+      g.fillStyle = `rgba(255, 236, 140, ${Math.max(0, a)})`;
+      g.fillText('+1', p.x, p.y - 18 - rise);
+    }
+    g.textBaseline = 'alphabetic';
+    for (const L of leavers) {
+      const u = Math.min(1, (now - L.t0) / LEAVE_MS), a = 1 - u;
+      g.globalAlpha = a;
+      g.fillStyle = L.color; g.beginPath(); g.arc(L.x, L.y, L.r * (1 - 0.15 * u), 0, 7); g.fill();
+      g.fillStyle = ink; g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
+      g.fillText(L.text, L.x, L.y - L.r - 8);
+      g.globalAlpha = 1;
+    }
+  };
+  window.hawkesNetFeedback = {
+    muted: () => muted, setMuted, unlockAudio, unlocked: () => audioUnlocked, soundsPlayed: () => soundsPlayed,
+    lastCollect: () => (lastCollect ? { ...lastCollect } : null),
+    particles: () => particles.length, pops: () => pops.length,
+    pulseActive: () => pulseUntil > performance.now(),
+    peerIn: () => [...peerIn.keys()], leavers: () => leavers.map((L) => L.id),
+    recentJoins: () => recentJoins.map((j) => j.id), recentLeaves: () => recentLeaves.map((j) => j.id),
+    rereadMute: () => { try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { muted = false; } syncMuteBtn(); return muted; },
+    muteKey: MUTE_KEY, dpr: () => canvasDpr, caps: { maxParticles: MAX_PARTICLES, burst: BURST_N, pulseMs: PULSE_MS, dprMax: 2 },
+  };
+  addEventListener('keydown', (e) => { unlockAudio(); if (e.key.startsWith('Arrow')) { keys.add(e.key); e.preventDefault(); } });
   addEventListener('keyup', (e) => keys.delete(e.key));
   const cv = $('c'), g = cv.getContext('2d');
+  // Cap backing-store density so a high-DPI phone still paints at ~60 fps (logical arena stays W×H).
+  const fitCanvas = () => {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    canvasDpr = dpr;
+    if (cv.width === W * dpr && cv.height === H * dpr) return dpr;
+    cv.width = W * dpr; cv.height = H * dpr;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return dpr;
+  };
+  fitCanvas();
+  addEventListener('resize', fitCanvas);
+  syncMuteBtn();
+  $('mute').onclick = () => setMuted(!muted);
   // Pointer events cover mouse, pen and touch: a press or tap puts your player there, dragging carries it (touch-action: none on the canvas keeps the page from scrolling).
   const moveTo = (e) => { const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); };
   // `inputNote` is the playtest's (it puts each finished gesture in the run's events: a tap or a drag, with its pointer type and where it went); null otherwise.
   let inputNote = null, gesture = null;
   const spot = () => `${Math.round(pos.x)},${Math.round(pos.y)}`;
-  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); gesture = { type: e.pointerType || 'mouse', moves: 0, from: spot() }; });
+  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; unlockAudio(); try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); gesture = { type: e.pointerType || 'mouse', moves: 0, from: spot() }; });
   cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) { moveTo(e); if (gesture) gesture.moves++; } });
   const endGesture = () => { if (gesture) inputNote?.(gesture.moves ? 'drag' : 'tap', `${gesture.type}: ${gesture.moves} moves, from ${gesture.from} to ${spot()}`); gesture = null; };
   cv.addEventListener('pointerup', endGesture); cv.addEventListener('pointercancel', endGesture);
@@ -103,11 +215,30 @@
       if (e.why === 'links failed') { log("Couldn't connect directly, switched to relay"); console.info('[hawkes-net demo] direct link failed:', net.linkFailure || 'no reason given'); }
       else log(`room moved: ${e.from} -> ${e.to} (${e.why})`);
     });
-    net.when('peer:join', (p) => log(`${p.name || p.id} joined`));
-    net.when('peer:leave', (e) => log(`${e.peer.name || e.peer.id} left (${e.reason})`));
+    net.when('peer:join', (p) => {
+      const at = performance.now();
+      recentJoins.push({ id: p.id, at }); if (recentJoins.length > 12) recentJoins.shift();
+      log(`${p.name || p.id} joined`);
+    });
+    net.when('peer:leave', (e) => {
+      const id = e.peer.id, tr = tracks.get(id), s = tr?.sample(), at = performance.now();
+      const x = s ? s[0] : W / 2, y = s ? s[2] : H / 2;
+      leavers.push({ id, x, y, r: 9, color: e.peer.color || '#888', text: e.peer.name || id, t0: at });
+      recentLeaves.push({ id, at }); if (recentLeaves.length > 12) recentLeaves.shift();
+      peerIn.delete(id); tracks.delete(id);
+      log(`${e.peer.name || e.peer.id} left (${e.reason})`);
+    });
     net.when('host', (e) => log(`host is now ${e.host}`));
     net.when('problem', (e) => log(`problem: ${e.code} ${e.detail}`));
-    net.onPose((id, s, at) => { let t = tracks.get(id); if (!t) tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] }))); t.push(at, [s.p[0], s.p[1], s.p[2]], id); });
+    net.onPose((id, s, at) => {
+      let t = tracks.get(id);
+      if (!t) {
+        tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] })));
+        // Pop-in starts when the peer first becomes drawable (first pose), so the ring is on a real dot, not empty air.
+        if (recentJoins.some((j) => j.id === id && performance.now() - j.at < 4000) && !peerIn.has(id)) peerIn.set(id, performance.now());
+      }
+      t.push(at, [s.p[0], s.p[1], s.p[2]], id);
+    });
     wireOrbs(net);
   }, () => { $('me').textContent = 'could not join'; log(`could not join: ${joinInfo.failed}`); });
   const playtestFile = import('/demo-playtest.mjs'); // loads beside the join; installed at the end, nothing runs unless a playtest starts
@@ -146,7 +277,8 @@
       const by = String(data.by || '');
       if (by) game.scores[by] = (game.scores[by] || 0) + 1;
       const orb = game.orbs.find((o) => o.id === data.orb);
-      if (orb) { orb.x = +data.nx; orb.y = +data.ny; orb.gen = (orb.gen || 1) + 1; }
+      // Burst/+1/sound/pulse at the collected spot on every screen that applies the award (not only the collector).
+      if (orb) { collectFx(orb.x, orb.y); orb.x = +data.nx; orb.y = +data.ny; orb.gen = (orb.gen || 1) + 1; }
       if (game.sentTouch.startsWith(`${data.orb}:`)) game.sentTouch = '';
     });
     game.touch = room.sync.action('orb-touch', (data, { authoritative }) => {
@@ -277,6 +409,8 @@
   let last = performance.now(), lastPanel = -1e9, lastStats = { d: 0, u: 0, t: performance.now() };
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
+    fitCanvas();
+    tickFx(dt);
     if (t - lastPanel >= 500) { lastPanel = t; refreshPanel(); }
     if (!net) return drawJoining();
     const sp = 260 * dt;
@@ -294,7 +428,7 @@
     g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
     const ink = getComputedStyle(document.body).color;
     const game = orbGames.get(net);
-    // Glowing orbs under the players so dots stay readable; pulse is paint-only (no network).
+    // Glowing orbs under the players so dots stay readable; idle pulse is paint-only (no network).
     if (game) {
       const pulse = 0.65 + 0.35 * Math.sin(t / 280);
       for (const o of game.orbs) {
@@ -305,17 +439,32 @@
         g.strokeStyle = 'rgba(230, 255, 255, 0.9)'; g.lineWidth = 2; g.stroke();
       }
     }
+    drawFx(t, ink); // collect burst/+1/arena flash and leave fades sit under the dots
     const items = layout();
     for (const it of items) {
-      g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r, 0, 7); g.fill();
+      const joinT = peerIn.get(it.id);
+      let scale = 1, ring = 0, alpha = 1;
+      if (joinT != null) {
+        const u = Math.min(1, (t - joinT) / JOIN_MS);
+        scale = 0.15 + 0.85 * (1 - Math.pow(1 - u, 3));
+        ring = 1 - u; alpha = Math.min(1, 0.35 + 0.65 * u);
+      }
+      g.globalAlpha = alpha;
+      if (ring > 0) {
+        g.beginPath(); g.arc(it.x, it.y, it.r * (1.6 + 1.8 * (1 - ring)), 0, 7);
+        g.strokeStyle = `rgba(255, 255, 255, ${0.75 * ring})`; g.lineWidth = 2.5; g.stroke();
+      }
+      g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r * scale, 0, 7); g.fill();
       if (it.me) { g.strokeStyle = ink; g.lineWidth = 2; g.stroke(); }
       if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
+      g.globalAlpha = 1;
     }
     window.hawkesNetDemoView = {
-      w: W, h: H,
+      w: W, h: H, dpr: canvasDpr,
       orbs: game ? game.orbs.map((o) => ({ id: o.id, x: o.x, y: o.y, r: ORB_R, gen: o.gen })) : [],
       scores: game ? { ...game.scores } : {},
-      items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
+      items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
+      fx: { particles: particles.length, pops: pops.length, pulse: pulseUntil > t, leavers: leavers.length, muted, unlocked: audioUnlocked },
     };
     requestAnimationFrame(frame);
   }
@@ -393,6 +542,18 @@
     },
   });
   addSiteScenario(playtest);
+  const { addFeedbackScenario } = await import('/feedback-playtest.mjs');
+  addFeedbackScenario(playtest, {
+    main: () => net,
+    openPeer: () => openPlaytestPeer('Feedback peer', `fx-${Math.random()}`),
+    keyHold: (k, ms) => key(k, ms),
+    pointerTap: (uv) => pointerDrag([uv], 0, { type: phone() ? 'touch' : 'mouse' }),
+    driveTo: async (x, y) => {
+      const from = [pos.x / W, pos.y / H], to = [x / W, y / H];
+      await pointerDrag([from, [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], to], 700, { type: phone() ? 'touch' : 'mouse' });
+    },
+    untilReady: (until) => until(() => net && net.id, 15000, 'the demo to join its room'),
+  });
   inputNote = addInputEvents(playtest); // from here the page's own tap and drag events are in the run's report
   // Criterion: dragging or tapping on the arena moves your player. The bot presses, drags and lifts with pointer events (touch, then mouse), and the
   // checks read where the player is after each step: it must follow the pointer, and end where the pointer ended.
