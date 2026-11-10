@@ -30,7 +30,7 @@
 <main>
   <section class="card">
     <h1>Hawkes Net</h1>
-    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena. Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
+    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena — touch a glowing orb to score (the room host places five and awards each collect). Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
     <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
     <div class="row">
       <button class="primary" id="share">Copy invite link</button>
@@ -48,6 +48,7 @@
       <dt>Round trip</dt><dd id="rtt">–</dd>
       <dt>Down / up</dt><dd id="bw">–</dd>
       <dt>Bots here</dt><dd id="botn">0</dd>
+      <dt>Orbs</dt><dd id="orbline">–</dd>
     </dl>
     <ul id="peers"></ul>
     <div id="log"></div>
@@ -107,14 +108,89 @@
     net.when('host', (e) => log(`host is now ${e.host}`));
     net.when('problem', (e) => log(`problem: ${e.code} ${e.detail}`));
     net.onPose((id, s, at) => { let t = tracks.get(id); if (!t) tracks.set(id, (t = net.sync.track({ pos: [0, 1, 2] }))); t.push(at, [s.p[0], s.p[1], s.p[2]], id); });
+    wireOrbs(net);
   }, () => { $('me').textContent = 'could not join'; log(`could not join: ${joinInfo.failed}`); });
   const playtestFile = import('/demo-playtest.mjs'); // loads beside the join; installed at the end, nothing runs unless a playtest starts
   const tracks = new Map();
   const bots = [];
+  // Host-authoritative orb game on sync.state / sync.action only (no timers asking the service). Scores keyed by peer id.
+  const ORB_N = 5, ORB_R = 14, TOUCH_R = 22;
+  const orbPad = 40;
+  const randOrb = () => ({ x: orbPad + Math.random() * (W - 2 * orbPad), y: orbPad + Math.random() * (H - 2 * orbPad) });
+  const orbGames = new WeakMap(); // room -> local game mirror
+  function freshOrbs() {
+    const orbs = [];
+    for (let i = 0; i < ORB_N; i++) { const p = randOrb(); orbs.push({ id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }); }
+    return orbs;
+  }
+  function wireOrbs(room) {
+    if (!room || orbGames.has(room)) return orbGames.get(room);
+    const game = { orbs: [], scores: {}, seq: 0, applied: new Set(), sentTouch: '', touch: null, award: null };
+    // Late joiners and host migration: the host's document is the truth; everyone else applies the copy.
+    room.sync.state('orbs', {
+      get: () => ({ orbs: game.orbs, scores: game.scores, seq: game.seq }),
+      set: (s) => {
+        if (!s || typeof s !== 'object') return;
+        if (Array.isArray(s.orbs)) game.orbs = s.orbs.map((o) => ({ id: o.id, x: +o.x, y: +o.y, gen: +o.gen || 1 }));
+        if (s.scores && typeof s.scores === 'object') game.scores = { ...s.scores };
+        if (Number.isFinite(s.seq)) game.seq = s.seq;
+      },
+      rate: 8,
+    });
+    // Host decides the award, then broadcasts orb-award so the collector (skipped on the touch reply) also updates.
+    game.award = room.sync.action('orb-award', (data) => {
+      if (!data || data.n == null || game.applied.has(data.n)) return;
+      game.applied.add(data.n);
+      if (game.applied.size > 200) { const keep = [...game.applied].slice(-80); game.applied = new Set(keep); }
+      game.seq = Math.max(game.seq, data.n);
+      const by = String(data.by || '');
+      if (by) game.scores[by] = (game.scores[by] || 0) + 1;
+      const orb = game.orbs.find((o) => o.id === data.orb);
+      if (orb) { orb.x = +data.nx; orb.y = +data.ny; orb.gen = (orb.gen || 1) + 1; }
+      if (game.sentTouch.startsWith(`${data.orb}:`)) game.sentTouch = '';
+    });
+    game.touch = room.sync.action('orb-touch', (data, { authoritative }) => {
+      if (!authoritative || !data) return;
+      const orb = game.orbs.find((o) => o.id === data.orb);
+      if (!orb || (data.gen != null && data.gen !== orb.gen)) return;
+      const p = randOrb();
+      const n = game.seq + 1;
+      game.award({ orb: orb.id, by: data.by, nx: Math.round(p.x), ny: Math.round(p.y), n });
+    });
+    const boot = () => {
+      if (!room.isHost) return;
+      if (game.orbs.length !== ORB_N) { game.orbs = freshOrbs(); game.scores = { ...game.scores }; }
+    };
+    boot();
+    room.sync.onHost(() => { if (room.isHost) boot(); }); // onHost args are (hostId, previous); room.isHost is the flag
+    orbGames.set(room, game);
+    return game;
+  }
+  function touchAt(room, x, y) {
+    const game = orbGames.get(room) || wireOrbs(room);
+    if (!game?.touch || !room?.id) return false;
+    for (const orb of game.orbs) {
+      if (Math.hypot(orb.x - x, orb.y - y) <= TOUCH_R) {
+        const key = `${orb.id}:${orb.gen}`;
+        if (game.sentTouch === key) return false;
+        game.sentTouch = key;
+        game.touch({ orb: orb.id, gen: orb.gen, by: room.id });
+        return true;
+      }
+    }
+    return false;
+  }
+  function snapshot(room) {
+    const game = room && orbGames.get(room);
+    if (!game) return { orbs: [], scores: {} };
+    return { orbs: game.orbs.map((o) => ({ ...o })), scores: { ...game.scores } };
+  }
+  window.hawkesNetOrbs = { wire: wireOrbs, touchAt, snapshot, ORB_N, ORB_R };
   $('bots').onclick = async () => {
     // Bots: more players in this page (no singleton), wandering.
     for (let i = 0; i < 5; i++) {
       const b = await join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: `Bot ${bots.length + 1}`, role: 'player', config, leaveOnHide: true, sub: `bot-${Math.random()}` });
+      wireOrbs(b);
       bots.push({ net: b, x: Math.random() * W, y: Math.random() * H, a: Math.random() * 6.28 });
       $('botn').textContent = bots.length;
     }
@@ -207,17 +283,40 @@
     if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
     pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
     net.pose([pos.x, 0, pos.y], 0);
-    for (const b of bots) { b.a += (Math.random() - 0.5) * 0.3; b.x += Math.cos(b.a) * 120 * dt; b.y += Math.sin(b.a) * 120 * dt; if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a; b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y)); b.net.pose([b.x, 0, b.y], 0); }
+    touchAt(net, pos.x, pos.y); // event-driven collect: only when this player is on an orb
+    for (const b of bots) {
+      b.a += (Math.random() - 0.5) * 0.3; b.x += Math.cos(b.a) * 120 * dt; b.y += Math.sin(b.a) * 120 * dt;
+      if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a;
+      b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y));
+      b.net.pose([b.x, 0, b.y], 0); touchAt(b.net, b.x, b.y);
+    }
     g.clearRect(0, 0, W, H);
     g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
     const ink = getComputedStyle(document.body).color;
+    const game = orbGames.get(net);
+    // Glowing orbs under the players so dots stay readable; pulse is paint-only (no network).
+    if (game) {
+      const pulse = 0.65 + 0.35 * Math.sin(t / 280);
+      for (const o of game.orbs) {
+        g.beginPath(); g.arc(o.x, o.y, ORB_R * 1.6, 0, 7);
+        g.fillStyle = `rgba(80, 220, 255, ${0.12 * pulse})`; g.fill();
+        g.beginPath(); g.arc(o.x, o.y, ORB_R, 0, 7);
+        g.fillStyle = `rgba(120, 240, 255, ${0.55 + 0.35 * pulse})`; g.fill();
+        g.strokeStyle = 'rgba(230, 255, 255, 0.9)'; g.lineWidth = 2; g.stroke();
+      }
+    }
     const items = layout();
     for (const it of items) {
       g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r, 0, 7); g.fill();
       if (it.me) { g.strokeStyle = ink; g.lineWidth = 2; g.stroke(); }
       if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
     }
-    window.hawkesNetDemoView = { w: W, h: H, items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })) };
+    window.hawkesNetDemoView = {
+      w: W, h: H,
+      orbs: game ? game.orbs.map((o) => ({ id: o.id, x: o.x, y: o.y, r: ORB_R, gen: o.gen })) : [],
+      scores: game ? { ...game.scores } : {},
+      items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
+    };
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -233,13 +332,17 @@
     $('host').textContent = net.isHost ? 'you' : (net.peers.get(net.host)?.name || net.host || '–');
     $('rtt').textContent = s.rttMs === null ? (net.isHost && net.transport === 'p2p' ? 'you host' : '–') : `${s.rttMs} ms`;
     $('peers').innerHTML = '';
+    const scores = orbGames.get(net)?.scores || {};
     for (const p of [...net.peers.values()].sort((a, b) => a.ord - b.ord)) {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="dot" style="background:${p.color || '#888'}"></span><span style="flex:1"></span><span class="pill"></span>`;
+      li.innerHTML = `<span class="dot" style="background:${p.color || '#888'}"></span><span style="flex:1"></span><span class="pill"></span><span class="pill" title="orb score"></span>`;
       li.children[1].textContent = p.name || p.id;
       li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? (p.route === 'direct' ? 'linked' : 'signal') : p.route; // 'linked' only once the WebRTC channel is open
+      li.children[3].textContent = `${scores[p.id] || 0}`;
       $('peers').appendChild(li);
     }
+    const gstate = orbGames.get(net);
+    $('orbline').textContent = gstate ? `${gstate.orbs.length} lit · you ${gstate.scores[net.id] || 0}` : '–';
   }
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
@@ -258,10 +361,12 @@
   const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
+  const { orbChecks } = await import('/orbs-playtest.mjs');
+  const openPlaytestPeer = (name, sub) => join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name, role: 'player', config, sub, log: false });
   const playtest = installNetPlaytest({
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBlocked: async (r, name, logged) => { const n = await join(r, { project: 'netdemo', endpoint: location.origin, transport: 'auto', direct: false, name, role: 'player', config: { p2pMax: 8, maxPlayers: 64, profile: 'light' }, sub: `fb-${Math.random()}`, log: false }); if (logged) n.when('transport', (e) => { if (e.why === 'links failed') log("Couldn't connect directly, switched to relay"); }); return n; },
-    openBot: () => join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name: 'Playtest bot', role: 'player', config, sub: `pt-${Math.random()}`, log: false }),
+    openBot: () => openPlaytestPeer('Playtest bot', `pt-${Math.random()}`),
     drive: async (step) => { if (phone()) { await touchDrag([[0.3, 0.4], [0.4, 0.4], [0.5, 0.45], [0.6, 0.55], [0.65, 0.6]], 900); } else { await key('ArrowRight', 900); await key('ArrowDown', 700); } await step(100); },
     cornerDrive: async () => { if (phone()) await touchDrag([[0.5, 0.5], [0.25, 0.25], [0.02, 0.02], [0, 0]], 600); else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); } },
     switchLines: () => $('log').textContent.split('\n').filter((l) => l.includes("Couldn't connect directly")),
@@ -271,7 +376,21 @@
     shownPos: (id) => tracks.get(id)?.sample() ?? null,
     botPose: (u) => [200 + 500 * u, 0, 450],
     tolerance: 8,
-    extra: async (c) => { await dragChecks(c); await peerChecks(c); await siteChecks({ check: c.check, metric: c.metric }); }, // the arena's pointer checks come first, the site checks close the smoke
+    extra: async (c) => {
+      await dragChecks(c); await peerChecks(c);
+      await orbChecks({ ...c, collector: c.bot, openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: () => {} });
+      await siteChecks({ check: c.check, metric: c.metric });
+    },
+    // Extends two-players: open a bot as B, steer onto an orb, assert A sees the score and respawn (real peers stay for the meet checks).
+    afterTwoPlayers: async (c) => {
+      let bot = null;
+      try {
+        bot = await (c.openBot ? c.openBot() : openPlaytestPeer('Orb bot', `orb-${Math.random()}`));
+        await c.until(() => bot && c.main.peers.has(bot.id), 15000, 'the orb collector bot to join');
+        await orbChecks({ check: c.check, main: c.main, collector: bot, until: c.until, wait: c.wait, metric: c.metric,
+          openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: c.event || (() => {}) });
+      } finally { try { await bot?.leave(); } catch { /* gone */ } }
+    },
   });
   addSiteScenario(playtest);
   inputNote = addInputEvents(playtest); // from here the page's own tap and drag events are in the run's report
