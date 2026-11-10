@@ -172,6 +172,8 @@ class Room {
     this.things = new Map(); // id -> the newest 12 values (deltas applied)
     this.pushed = new Map(); // id -> what I last sent of a thing
     this.states = new Map(); this.actions = new Map(); this.hostHandlers = new Set();
+    // `_s` that arrived before sync.state(name) was registered (a late wire after join or a p2p→relay move).
+    this.pendingStates = new Map();
     this.st = { up: 0, down: 0, upMsgs: 0, downMsgs: 0, migrations: 0, linkRetries: 0, reconnects: 0, expressUp: 0, expressDown: 0, since: wall() };
     this.ws = null; this.wsCodec = null; this.resume = null; this.relayUrl = null; this.ice = DEFAULT_ICE;
     this.p2p = null;
@@ -449,6 +451,8 @@ class Room {
       this._resendAfter(h.lastSeq);
       this._ping();
       this._readyNow(resumed);
+      // Host: push synced states onto the new stream now (don't wait for the 1 s upkeep tick).
+      if (h.migrated) this._syncStates();
       return;
     }
     // p2p: the socket is the signal route; the world comes from the host (or, if I host, from the room in this page).
@@ -1034,8 +1038,20 @@ class Room {
       /** name, { get, set, rate, owner: 'host' | 'everyone' | () => bool, where, important }. */
       state(name, def) {
         if (!def || typeof def.get !== 'function' || typeof def.set !== 'function') throw new Error('hawkes-net: sync.state(name, { get, set })');
-        self.states.set(String(name), { def, sent: null, copy: {}, t: 0, full: 0 });
-        return { remove: () => self.states.delete(String(name)), resend: () => { const st = self.states.get(String(name)); if (st) st.sent = null; } };
+        const key = String(name);
+        const st = { def, sent: null, copy: {}, t: 0, full: 0 };
+        self.states.set(key, st);
+        // Apply a `_s` that landed before this handler existed (join / migrate while the game was still wiring).
+        const pending = self.pendingStates.get(key);
+        if (pending) {
+          self.pendingStates.delete(key);
+          if (!self._ownsState(def)) {
+            st.copy = pending.copy;
+            try { def.set(st.copy, Object.keys(st.copy), null, { at: pending.at, from: pending.from }); }
+            catch (e) { console.error(`[hawkes-net] sync ${key}:`, e); }
+          }
+        }
+        return { remove: () => self.states.delete(key), resend: () => { const s = self.states.get(key); if (s) s.sent = null; } };
       },
       /** Something that must happen once for everyone, decided by the host. Returns invoke(data). */
       action(name, run) {
@@ -1143,8 +1159,16 @@ class Room {
   _ownsState(def) { return typeof def.owner === 'function' ? Boolean(def.owner()) : def.owner === 'everyone' ? true : this.isHost; }
   _onSync(kind, data, from) {
     if (kind === '_s') {
+      if (!data?.n || !data.d) return;
       const st = this.states.get(data.n);
-      if (!st || !data.d || this._ownsState(st.def)) return;
+      if (!st) {
+        // No sync.state yet: keep the newest copy so a late wire (smoke bot after migrate) still applies it.
+        const prev = this.pendingStates.get(data.n);
+        const copy = { ...(data.f || !prev ? {} : prev.copy), ...data.d };
+        this.pendingStates.set(data.n, { copy, at: Number.isFinite(data.at) ? data.at : this.now(), from: from && from.id });
+        return;
+      }
+      if (this._ownsState(st.def)) return;
       st.copy = { ...(data.f ? {} : st.copy), ...data.d };
       try { st.def.set(st.copy, Object.keys(data.d), from, { at: Number.isFinite(data.at) ? data.at : this.now(), from: from && from.id }); } catch (e) { console.error(`[hawkes-net] sync ${data.n}:`, e); }
       return;
