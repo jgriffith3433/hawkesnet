@@ -12,7 +12,7 @@ after(async () => { await hub.stop(); });
 
 const ORIGIN = 'https://net.example';
 const GOOD_PHONE = { width: 390, scrollWidth: 390, menuShown: true, navHiddenBefore: true, navShownAfter: true, expandedAfter: true, minFont: 13, wideBlocks: 0 };
-const GOOD_HEADER = ['Home', 'Docs', 'Quickstart', 'Demo'].map((text, i) => ({ text, path: ['/', '/docs/errors', '/quickstart', '/demo'][i] }));
+const GOOD_HEADER = ['Home', 'Docs', 'Quickstart', 'Demo'].map((text, i) => ({ text, path: ['/', '/docs/api', '/quickstart', '/demo'][i] }));
 
 test('judgeStatus: ok or degraded with a version', () => {
   assert.deepEqual(m.judgeStatus({ health: 'ok', version: '1.4.0' }).parts, [1, 4, 0]);
@@ -23,7 +23,7 @@ test('judgeStatus: ok or degraded with a version', () => {
 });
 
 test('judgeHeader and judgeCopy say what is missing', () => {
-  assert.match(m.judgeHeader(GOOD_HEADER), /Home \/, Docs \/docs\/errors, Quickstart \/quickstart, Demo \/demo/);
+  assert.match(m.judgeHeader(GOOD_HEADER), /Home \/, Docs \/docs\/api, Quickstart \/quickstart, Demo \/demo/);
   assert.equal(m.judgeHeader([{ text: 'Home', path: '/home' }, ...GOOD_HEADER.slice(1)]).startsWith('Home /home'), true);
   assert.throws(() => m.judgeHeader([]), /no shared header/);
   assert.throws(() => m.judgeHeader(GOOD_HEADER.slice(0, 3)), /no "Demo" link/);
@@ -37,8 +37,8 @@ test('judgeHeader and judgeCopy say what is missing', () => {
 async function runChecks(opts: { status?: unknown; pages?: Record<string, string>; read?: (p: string) => Promise<unknown>; phoneRead?: (p: string) => Promise<unknown> } = {}) {
   const fetched: string[] = [];
   const pages: Record<string, string> = opts.pages ?? {
-    '/home': '<a href="/docs/errors">d</a><a href="/quickstart">q</a><a href="https://github.com/x">g</a>',
-    '/docs/errors': '<a href="/home">h</a><a href="#a">a</a><h2 id="a">a</h2>',
+    '/home': '<a href="/docs/api">d</a><a href="/quickstart">q</a><a href="https://github.com/x">g</a>',
+    '/docs/api': '<a href="/home">h</a><a href="#a">a</a><h2 id="a">a</h2>',
     '/quickstart': '<a href="/demo">d</a><a href="/dashboard#key">k</a><a href="mailto:support@hawkesgen.ai">m</a>',
   };
   const fetchFn = async (url: string) => {
@@ -75,11 +75,11 @@ test('siteChecks: a healthy site passes every check and reports status, version 
 test('siteChecks: a broken link, a missing header, a block without Copy and a down service each fail their own check', async () => {
   const bad = await runChecks({
     status: { health: 'down', version: '1.4.0' },
-    pages: { '/home': '<a href="/gone">x</a>', '/docs/errors': '<a href="/home">h</a>', '/quickstart': '<a href="/home">h</a>' },
-    read: async (p) => (p === '/docs/errors' ? { header: [], blocks: [{ copy: 1 }] } : p === '/quickstart' ? { header: GOOD_HEADER, blocks: [{ copy: 0 }] } : { header: GOOD_HEADER, blocks: [{ copy: 1 }] }),
+    pages: { '/home': '<a href="/gone">x</a>', '/docs/api': '<a href="/home">h</a>', '/quickstart': '<a href="/home">h</a>' },
+    read: async (p) => (p === '/docs/api' ? { header: [], blocks: [{ copy: 1 }] } : p === '/quickstart' ? { header: GOOD_HEADER, blocks: [{ copy: 0 }] } : { header: GOOD_HEADER, blocks: [{ copy: 1 }] }),
   });
   const failed = Object.entries(bad.lines).filter(([, l]) => !l.ok).map(([n]) => n);
-  assert.deepEqual(failed, ['Status and version: the service is ok or degraded and has a version', 'Home (/home): every link works', 'Docs (/docs/errors): the shared header has Home, Docs, Quickstart and Demo', 'Quickstart (/quickstart): every code block has a Copy button']);
+  assert.deepEqual(failed, ['Status and version: the service is ok or degraded and has a version', 'Home (/home): every link works', 'Docs (/docs/api): the shared header has Home, Docs, Quickstart and Demo', 'Quickstart (/quickstart): every code block has a Copy button']);
   assert.match(bad.lines['Home (/home): every link works'].why, /\/gone/);
   assert.equal(bad.metrics.homeLinksBroken, 1);
 });

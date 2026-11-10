@@ -59,7 +59,7 @@ test('checkLinks: one fetch per same-site address, none for outside links, failu
 });
 
 test('the real docs page and quickstart: every link answers on a running service', async () => {
-  for (const p of ['/docs/errors', '/quickstart']) {
+  for (const p of ['/docs/api', '/quickstart']) {
     const html = await (await fetch(hub.endpoint + p)).text();
     const out = await checkLinks(html, { pageUrl: hub.endpoint + p, origin: hub.endpoint, fetchFn: fetch });
     assert.ok(out.counts.total > 5, `${p} has links`);

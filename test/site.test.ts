@@ -30,11 +30,13 @@ test('contrast helpers: black on white is 21:1, alpha is laid over what is under
 });
 
 test('every page links the shared stylesheet and script, and none has a timer that repeats', async () => {
-  for (const p of ['/', '/home', '/docs/errors', '/quickstart', '/demo', '/dashboard']) {
+  for (const p of ['/', '/home', '/docs/api', '/docs/errors', '/quickstart', '/demo', '/dashboard']) {
     const html = await (await fetch(hub.endpoint + p)).text();
     assert.match(html, /<link rel="stylesheet" href="\/site\.css">/, `${p} links site.css`);
     assert.match(html, /<script src="\/site\.js" defer><\/script>/, `${p} loads site.js`);
-    assert.ok(!/setInterval/.test(html), `${p} has no setInterval`);
+    // API reference examples may mention setInterval; ban it only outside <pre> (no page clocks).
+    const withoutPres = html.replace(/<pre\b[^>]*>[\s\S]*?<\/pre>/gi, '');
+    assert.ok(!/setInterval/.test(withoutPres), `${p} has no setInterval outside code examples`);
     assert.ok(!/prefers-color-scheme|data-theme="light"/.test(html), `${p} has one theme`);
   }
   const home = await (await fetch(hub.endpoint + '/home')).text();

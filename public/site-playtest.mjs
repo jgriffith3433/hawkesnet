@@ -1,5 +1,5 @@
 // The site checks of Hawkes Studio's playtest at /demo: the status and version, and the pages a visitor reads (the landing
-// page /home, the docs /docs/errors and the quickstart): every link on them, the shared header and a Copy button on every
+// page /home, the docs /docs/api and the quickstart): every link on them, the shared header and a Copy button on every
 // code block. /demo's `site` scenario runs them, and the end of /demo's `smoke` does too, so a plain smoke run covers them.
 // (Wired in public/demo.html; public/demo-playtest.mjs is shared with hawkesnet-js and hawkesnet-babylon and stays as it is.)
 //
@@ -8,8 +8,8 @@
 // (site.js draws both in the browser, so the page's text alone doesn't have them). The bot never navigates away from /demo.
 import { checkLinks } from './landing-playtest.mjs';
 
-export const SITE_CHECK_PAGES = [['Home', '/home'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart']];
-export const PHONE_PAGES = [['Home', '/home'], ['Docs', '/docs/errors'], ['Quickstart', '/quickstart'], ['Demo', '/demo']];
+export const SITE_CHECK_PAGES = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart']];
+export const PHONE_PAGES = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo']];
 export const PHONE_W = 390;
 export const HEADER_LINKS = ['Home', 'Docs', 'Quickstart', 'Demo'];
 
@@ -26,7 +26,7 @@ export function judgeStatus(s) {
 /** `links` is [{ text, href }] from the page's header nav: Home, Docs, Quickstart and Demo must all be there, pointing at their pages. */
 export function judgeHeader(links) {
   if (!links?.length) throw new Error('no shared header on the page');
-  const want = { Home: ['/', '/home'], Docs: ['/docs/errors'], Quickstart: ['/quickstart'], Demo: ['/demo'] };
+  const want = { Home: ['/', '/home'], Docs: ['/docs/api', '/docs'], Quickstart: ['/quickstart'], Demo: ['/demo'] };
   const got = [];
   for (const name of HEADER_LINKS) {
     const l = links.find((x) => x.text === name);
@@ -178,7 +178,7 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
  */
 export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, where = location.host } = {}) {
   const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block', seconds: 40, tags: ['smoke', 'site'],
-    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/errors and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
+    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
   let run = null;
   const r1 = (n) => Math.round(n * 10) / 10;
