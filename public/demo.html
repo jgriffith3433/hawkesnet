@@ -37,9 +37,19 @@
   .pill { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
   .pill.relay { color: var(--accent); border-color: var(--accent); } .pill.p2p { color: var(--ok); border-color: var(--ok); }
   #log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 140px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }
+  #banner { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 20; max-width: min(520px, calc(100% - 24px)); padding: 8px 16px; border-radius: 999px; background: rgba(11,15,20,.92); border: 1px solid var(--bc, #a7afbb); text-align: center; line-height: 1.4; display: none; }
+  #banner[data-state=connecting], #banner[data-state=reconnecting] { display: block; --bc: #fbbf24; }
+  #banner[data-state=online] { display: none; }
+  #banner b { color: var(--bc, #a7afbb); }
+  #banner small { display: block; color: var(--muted); }
+  @media (max-width: 640px) {
+    #banner { position: static; transform: none; margin: 8px 12px 0; max-width: none; border-radius: 14px; display: block; }
+    #banner[data-state=online] { display: none; }
+  }
 </style>
 </head>
 <body>
+<div id="banner" role="status" aria-live="polite" data-state="connecting"><b>Connecting…</b><small>Reaching Hawkes Net.</small></div>
 <main>
   <section class="card">
     <h1>Hawkes Net</h1>
@@ -368,12 +378,38 @@
   joining.catch((e) => { joinInfo.failed = String(e?.message || e); }); // the arena says so (the handler below logs it)
   // The join event: the room's first state is here. The buttons that need a room come on, the arena draws the players.
   // (Attached at the top, so nothing else on the page, like loading the playtest bot, can hold it back.)
+  // Connection banner: only from SDK status events (no timers). Playtests read bannerLog / banner().
+  const bannerEl = $('banner');
+  const bannerLog = [];
+  const bannerWords = {
+    connecting: ['Connecting…', 'Reaching Hawkes Net.'],
+    reconnecting: ['Connection lost. Reconnecting…', 'The room keeps its name. You land back with a fresh ticket.'],
+    online: ['Connected', ''],
+    closed: ['Disconnected', 'Refresh to join again.'],
+  };
+  const renderBanner = (why = '') => {
+    if (!bannerEl) return;
+    const status = net?.status || (joinInfo.failed ? 'closed' : 'connecting');
+    const [head, detail] = bannerWords[status] || [status, ''];
+    const text = detail ? `${head} ${detail}` : head;
+    if (bannerEl.dataset.state === status && bannerEl.textContent === text) return;
+    bannerEl.dataset.state = status;
+    bannerEl.innerHTML = '<b></b><small></small>';
+    bannerEl.firstChild.textContent = head;
+    bannerEl.lastChild.textContent = detail;
+    bannerLog.push({ state: status, head, detail, why, at: performance.now() });
+    if (bannerLog.length > 40) bannerLog.shift();
+  };
+  window.hawkesNetBanner = () => ({ state: bannerEl?.dataset.state || '', text: bannerEl?.textContent || '', log: bannerLog.slice() });
+  renderBanner('start');
   joining.then((joined) => {
     net = joined;
     joinInfo.ms = Math.round(performance.now() - joinT0);
     $('bots').disabled = false; $('migrate').disabled = false;
     window.hawkesNetDemo = net;
     log(`joined as ${net.id} (${net.transport}) in ${joinInfo.ms} ms`);
+    renderBanner('ready');
+    net.when('status', () => renderBanner('status'));
     // One short sentence in the log; the ICE/data channel detail (net.linkFailure) is already in the console (the SDK warns) and is repeated there.
     net.when('transport', (e) => {
       if (e.why === 'links failed') { log("Couldn't connect directly, switched to relay"); console.info('[hawkes-net demo] direct link failed:', net.linkFailure || 'no reason given'); }
@@ -404,7 +440,7 @@
       t.push(at, [s.p[0], s.p[1], s.p[2]], id);
     });
     wireOrbs(net);
-  }, () => { $('me').textContent = 'could not join'; log(`could not join: ${joinInfo.failed}`); });
+  }, () => { $('me').textContent = 'could not join'; log(`could not join: ${joinInfo.failed}`); renderBanner('failed'); });
   const playtestFile = import('/demo-playtest.mjs'); // loads beside the join; installed at the end, nothing runs unless a playtest starts
   const tracks = new Map();
   const bots = [];
@@ -974,6 +1010,13 @@
     main: () => net,
     stickDrag,
     untilReady: (until) => until(() => net && net.id, 15000, 'the demo to join its room'),
+  });
+  const { addDrainScenario } = await import('/drain-playtest.mjs');
+  addDrainScenario(playtest, {
+    main: () => net,
+    openPeer: () => openPlaytestPeer('Drain peer', `drain-${Math.random()}`),
+    roomName: () => room,
+    untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
   });
   inputNote = addInputEvents(playtest); // from here the page's own tap and drag events are in the run's report
   // Desktop: absolute drag/tap. Phone: floating stick in the lower half moves the player.

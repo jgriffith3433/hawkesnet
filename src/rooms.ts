@@ -409,10 +409,17 @@ export class Rooms {
     return rows;
   }
 
-  /** Stops taking players: every room's players are told to reconnect (they ask Gen for a new node). */
+  /** Stops taking players: every room's players get a pushed draining notice so they skip resume and rejoin with a new ticket. */
   drain() {
     this.draining = true;
-    for (const room of this.rooms.values()) for (const p of room.peers.values()) if (p.ws) { this.control(p, { c: 'move', why: 'node draining' }); }
+    for (const room of this.rooms.values()) {
+      for (const p of room.peers.values()) {
+        if (!p.ws) continue;
+        // SDK 1.4.3+ handles `draining` (skip resume, rejoin at once). Older pages ignore the kind and fall through
+        // to the socket close + `_resuming` fallback when the process exits.
+        this.control(p, { c: 'draining', why: 'node restart' });
+      }
+    }
   }
 
   // ------------------------------------------------------------------ helpers

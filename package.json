@@ -1,6 +1,6 @@
 {
   "name": "hawkesnet",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "private": true,
   "description": "Hawkes Net: multiplayer for web, Babylon and Unity WebGL games (net.hawkesgen.ai). The service, its relay and the SDK.",
   "type": "module",

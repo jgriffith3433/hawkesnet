@@ -32,9 +32,10 @@ function checkKey(req: IncomingMessage): Client | null {
   return canProject(c, only) ? { ...c, projects: [only] } : null;
 }
 
-export async function startTestHub() {
+/** Starts the in-process test hub. Pass `port` to bind a fixed port (a restart test reuses it). */
+export async function startTestHub(port = 0) {
   const usage: { node: string; rows: any[] }[] = [];
-  const hub = await startHub({ port: 0, checkKey, usage: (r) => usage.push(r), log: () => {} });
+  const hub = await startHub({ port, checkKey, usage: (r) => usage.push(r), log: () => {} });
   const svc = await import('../src/service.ts');
   for (let i = 0; i < 50 && !svc.status().up; i++) await new Promise((r) => setTimeout(r, 50));
   return { ...hub, endpoint: hub.url, usage, svc };

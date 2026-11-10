@@ -388,7 +388,8 @@ export async function startNode() {
   return embedded;
 }
 export const ownNode = () => embedded;
-export async function stopNode() { if (embedded) { await embedded.drain(3000).catch(() => {}); embedded.stop(); embedded = null; } }
+/** Drain first (pushed notice, short flush), then stop. Keep the wait short so a deploy restart is back within a couple of seconds. */
+export async function stopNode() { if (embedded) { await embedded.drain(500).catch(() => {}); embedded.stop(); embedded = null; } }
 
 /** Who a ticket request is from (the public door uses the origin and the address). */
 export function ticketAuth(req: IncomingMessage, client: Client | null): TicketAuth {

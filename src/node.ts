@@ -194,14 +194,17 @@ export class NetNode {
     if (rows.length) await this.o.link.usage({ node: this.o.id, from, to, rows });
   }
 
-  /** Stops taking players and tells everyone to move; resolves when the rooms are empty or after `ms`. */
+  /** Stops taking players and pushes a draining notice; resolves when the rooms are empty or after `ms`. */
   async drain(ms = 10_000) {
     this.draining = true;
     if (this.rooms) this.rooms.drain();
     for (const w of this.workers) if (w.alive) w.proc.send({ t: 'drain' });
     await this.beat().catch(() => {});
-    const until = Date.now() + ms;
-    while (Date.now() < until && ((await this.summary()).players ?? 0) > 0) await new Promise((r) => setTimeout(r, 250));
+    // Let the draining frames leave the process before sockets are torn down (no polling: one short wait).
+    const flushMs = Math.min(400, Math.max(0, ms));
+    if (flushMs) await new Promise((r) => setTimeout(r, flushMs));
+    const until = Date.now() + Math.max(0, ms - flushMs);
+    while (Date.now() < until && ((await this.summary()).players ?? 0) > 0) await new Promise((r) => setTimeout(r, 100));
     await this.reportUsage().catch(() => {});
   }
   stop() {
