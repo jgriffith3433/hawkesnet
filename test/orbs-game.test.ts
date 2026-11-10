@@ -1,4 +1,5 @@
-// Host-authoritative orbs over the real SDK: same 5 orbs, collect raises score on both within 500 ms, late joiner sees state.
+// Host-authoritative orbs over the real SDK: same 5 orbs, collect raises score on both within 500 ms, late joiner sees state,
+// rounds end with a shared result then restart, and host migration keeps the same round clock and scores.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestHub } from './helper.ts';
@@ -15,18 +16,33 @@ const wait = (test: () => unknown, ms: number, what: string) => new Promise<numb
 });
 
 const ORB_N = 5;
+const RESULT_MS = 3000;
 const pad = 40, W = 960, H = 600;
 const randOrb = () => ({ x: pad + Math.random() * (W - 2 * pad), y: pad + Math.random() * (H - 2 * pad) });
 
-function wire(room: any) {
-  const game: any = { orbs: [] as any[], scores: {} as Record<string, number>, seq: 0, applied: new Set<number>() };
+function wire(room: any, playMs = 60_000) {
+  const game: any = {
+    orbs: [] as any[], scores: {} as Record<string, number>, seq: 0, applied: new Set<number>(),
+    round: 0, phase: '', endsAt: 0, playMs, winner: null as any, board: [] as any[],
+  };
   room.sync.state('orbs', {
-    get: () => ({ orbs: game.orbs, scores: game.scores, seq: game.seq }),
+    get: () => ({
+      orbs: game.orbs, scores: game.scores, seq: game.seq,
+      round: game.round, phase: game.phase, endsAt: game.endsAt, playMs: game.playMs,
+      winner: game.winner, board: game.board,
+    }),
     set: (s: any) => {
       if (!s) return;
       if (Array.isArray(s.orbs)) game.orbs = s.orbs.map((o: any) => ({ id: o.id, x: +o.x, y: +o.y, gen: +o.gen || 1 }));
       if (s.scores) game.scores = { ...s.scores };
       if (Number.isFinite(s.seq)) game.seq = s.seq;
+      if (Number.isFinite(s.round)) game.round = s.round;
+      if (s.phase === 'play' || s.phase === 'result') game.phase = s.phase;
+      if (Number.isFinite(s.endsAt)) game.endsAt = s.endsAt;
+      if (Number.isFinite(s.playMs)) game.playMs = s.playMs;
+      if (s.winner === null) game.winner = null;
+      else if (s.winner) game.winner = { id: String(s.winner.id || ''), name: String(s.winner.name || ''), score: +s.winner.score || 0 };
+      if (Array.isArray(s.board)) game.board = s.board.map((r: any) => ({ id: String(r.id || ''), name: String(r.name || ''), score: +r.score || 0 }));
     },
     rate: 8,
   });
@@ -34,27 +50,80 @@ function wire(room: any) {
     if (!data || data.n == null || game.applied.has(data.n)) return;
     game.applied.add(data.n);
     game.seq = Math.max(game.seq, data.n);
+    if (game.phase === 'result') return;
     const by = String(data.by || '');
     if (by) game.scores[by] = (game.scores[by] || 0) + 1;
     const orb = game.orbs.find((o: any) => o.id === data.orb);
     if (orb) { orb.x = +data.nx; orb.y = +data.ny; orb.gen = (orb.gen || 1) + 1; }
   });
   const touch = room.sync.action('orb-touch', (data: any, { authoritative }: any) => {
-    if (!authoritative || !data) return;
+    if (!authoritative || !data || game.phase !== 'play') return;
     const orb = game.orbs.find((o: any) => o.id === data.orb);
     if (!orb || (data.gen != null && data.gen !== orb.gen)) return;
     const p = randOrb();
     award({ orb: orb.id, by: data.by, nx: Math.round(p.x), ny: Math.round(p.y), n: game.seq + 1 });
   });
-  if (room.isHost && game.orbs.length !== ORB_N) {
-    game.orbs = Array.from({ length: ORB_N }, (_, i) => { const p = randOrb(); return { id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }; });
-  }
-  room.sync.onHost(() => {
-    if (room.isHost && game.orbs.length !== ORB_N) {
+  const endRound = room.sync.action('orb-round-end', (data: any) => {
+    if (!data || data.n == null || game.applied.has(data.n)) return;
+    game.applied.add(data.n);
+    game.seq = Math.max(game.seq, data.n);
+    game.phase = 'result';
+    game.endsAt = Number.isFinite(data.endsAt) ? data.endsAt : Date.now() + RESULT_MS;
+    if (Number.isFinite(data.round)) game.round = data.round;
+    game.winner = data.winner ? { id: String(data.winner.id || ''), name: String(data.winner.name || ''), score: +data.winner.score || 0 } : null;
+    game.board = Array.isArray(data.board) ? data.board.map((r: any) => ({ id: String(r.id || ''), name: String(r.name || ''), score: +r.score || 0 })) : [];
+  });
+  const startRound = room.sync.action('orb-round-start', (data: any) => {
+    if (!data || data.n == null || game.applied.has(data.n)) return;
+    game.applied.add(data.n);
+    game.seq = Math.max(game.seq, data.n);
+    game.round = Number.isFinite(data.round) ? data.round : (game.round || 0) + 1;
+    game.phase = 'play';
+    game.playMs = Number.isFinite(data.playMs) ? data.playMs : playMs;
+    game.endsAt = Number.isFinite(data.endsAt) ? data.endsAt : Date.now() + game.playMs;
+    game.scores = {};
+    game.winner = null;
+    game.board = [];
+    if (Array.isArray(data.orbs) && data.orbs.length === ORB_N) {
+      game.orbs = data.orbs.map((o: any) => ({ id: o.id, x: +o.x, y: +o.y, gen: +o.gen || 1 }));
+    } else {
       game.orbs = Array.from({ length: ORB_N }, (_, i) => { const p = randOrb(); return { id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }; });
     }
   });
-  return { game, touch };
+  const boot = () => {
+    if (!room.isHost) return;
+    if (game.phase === 'play' || game.phase === 'result') {
+      if (game.phase === 'play' && game.orbs.length !== ORB_N) {
+        game.orbs = Array.from({ length: ORB_N }, (_, i) => { const p = randOrb(); return { id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }; });
+      }
+      return;
+    }
+    const ms = game.playMs || playMs;
+    startRound({
+      n: (game.seq || 0) + 1, round: 1, playMs: ms, endsAt: Date.now() + ms,
+      orbs: Array.from({ length: ORB_N }, (_, i) => { const p = randOrb(); return { id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }; }),
+    });
+  };
+  boot();
+  room.sync.onHost(() => { if (room.isHost) boot(); });
+  const tick = () => {
+    if (!room.isHost) return;
+    const now = Date.now();
+    if (game.phase === 'play' && game.endsAt && now >= game.endsAt) {
+      const ids = new Set([...Object.keys(game.scores), room.id, ...room.peers.keys()]);
+      const board = [...ids].map((id) => ({
+        id, name: id === room.id ? room.name : (room.peers.get(id)?.name || id), score: game.scores[id] || 0,
+      })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+      endRound({ n: game.seq + 1, round: game.round, endsAt: now + RESULT_MS, winner: board[0] ? { ...board[0] } : null, board });
+    } else if (game.phase === 'result' && game.endsAt && now >= game.endsAt) {
+      const ms = game.playMs || playMs;
+      startRound({
+        n: game.seq + 1, round: (game.round || 0) + 1, playMs: ms, endsAt: now + ms,
+        orbs: Array.from({ length: ORB_N }, (_, i) => { const p = randOrb(); return { id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }; }),
+      });
+    }
+  };
+  return { game, touch, tick, startRound };
 }
 
 test('orb game: same orbs, collect within 500 ms on both, late joiner sees scores', async () => {
@@ -99,6 +168,69 @@ test('orb game: same orbs, collect within 500 ms on both, late joiner sees score
     } finally { await c.leave(); }
   } finally {
     await b.leave(); await a.leave();
+    await hub.stop();
+  }
+});
+
+test('orb rounds: short play ends with the same winner on both, then scores reset', async () => {
+  const hub = await startTestHub();
+  const opts = (name: string, sub: string) => ({
+    project: 'netdemo', endpoint: hub.url, transport: 'relay' as const, name, log: false, leaveOnHide: false, sub,
+  });
+  const a = await join('orbs-round', opts('Host', 'a'));
+  const b = await join('orbs-round', opts('Guest', 'b'));
+  const timers: ReturnType<typeof setInterval>[] = [];
+  try {
+    await wait(() => a.peers.has(b.id) && b.peers.has(a.id), 5000, 'peers');
+    const wa = wire(a, 800), wb = wire(b, 800);
+    timers.push(setInterval(() => { wa.tick(); wb.tick(); }, 40));
+    await wait(() => wa.game.phase === 'play' && wb.game.phase === 'play', 5000, 'play phase');
+    const target = { ...wa.game.orbs[0] };
+    wb.touch({ orb: target.id, gen: target.gen, by: b.id });
+    await wait(() => (wa.game.scores[b.id] || 0) > 0, 3000, 'B scored');
+    await wait(() => wa.game.phase === 'result' && wb.game.phase === 'result', 5000, 'result phase');
+    assert.equal(wa.game.winner?.id, wb.game.winner?.id);
+    assert.equal(wa.game.winner?.name, wb.game.winner?.name);
+    assert.ok(wa.game.board.length >= 2);
+    const prev = wa.game.round;
+    await wait(() => wa.game.phase === 'play' && wb.game.phase === 'play' && wa.game.round > prev, 6000, 'next play round');
+    assert.deepEqual(wa.game.scores, {});
+    assert.deepEqual(wb.game.scores, {});
+    assert.equal(wa.game.orbs.length, ORB_N);
+  } finally {
+    for (const t of timers) clearInterval(t);
+    await b.leave(); await a.leave();
+    await hub.stop();
+  }
+});
+
+test('orb rounds: host leave mid-round keeps endsAt and scores for the new host', async () => {
+  const hub = await startTestHub();
+  const opts = (name: string, sub: string) => ({
+    project: 'netdemo', endpoint: hub.url, transport: 'relay' as const, name, log: false, leaveOnHide: false, sub,
+  });
+  const a = await join('orbs-mig', opts('Host', 'a'));
+  const b = await join('orbs-mig', opts('Guest', 'b'));
+  const timers: ReturnType<typeof setInterval>[] = [];
+  try {
+    await wait(() => a.peers.has(b.id) && b.peers.has(a.id), 5000, 'peers');
+    const wa = wire(a, 30_000), wb = wire(b, 30_000);
+    timers.push(setInterval(() => { try { wa.tick(); } catch { /* left */ } try { wb.tick(); } catch { /* left */ } }, 40));
+    await wait(() => wa.game.phase === 'play' && wb.game.phase === 'play' && wa.game.endsAt === wb.game.endsAt, 5000, 'shared play');
+    const target = { ...wb.game.orbs[0] };
+    wb.touch({ orb: target.id, gen: target.gen, by: b.id });
+    await wait(() => (wb.game.scores[b.id] || 0) > 0 && (wa.game.scores[b.id] || 0) > 0, 3000, 'score');
+    const before = { round: wb.game.round, endsAt: wb.game.endsAt, score: wb.game.scores[b.id] || 0, phase: wb.game.phase };
+    await a.leave();
+    await wait(() => b.isHost, 8000, 'B becomes host');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(wb.game.phase, before.phase);
+    assert.equal(wb.game.round, before.round);
+    assert.equal(wb.game.endsAt, before.endsAt);
+    assert.equal(wb.game.scores[b.id] || 0, before.score);
+  } finally {
+    for (const t of timers) clearInterval(t);
+    try { await b.leave(); } catch { /* gone */ }
     await hub.stop();
   }
 });

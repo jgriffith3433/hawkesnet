@@ -30,7 +30,7 @@
 <main>
   <section class="card">
     <h1>Hawkes Net</h1>
-    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena — touch a glowing orb to score (the room host places five and awards each collect). Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
+    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena — touch a glowing orb to score. The host runs sixty-second rounds (shared timer, then a winner and scoreboard, then a fresh round). Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
     <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
     <div class="row">
       <button class="primary" id="share">Copy invite link</button>
@@ -59,7 +59,14 @@
   import { join } from '/sdk/hawkes-net.mjs';
   const q = new URLSearchParams(location.search);
   const room = q.get('room') || `demo-${Math.random().toString(36).slice(2, 7)}`;
-  if (!q.get('room')) history.replaceState(null, '', `?room=${room}${q.get('t') ? `&t=${q.get('t')}` : ''}`);
+  // ?round=N (3–60): short play windows for playtests; default 60 s. Keep round/t/p2p/name when minting ?room=.
+  const ROUND_SEC = (() => { const n = Number(q.get('round')); return Number.isFinite(n) && n >= 3 && n <= 60 ? Math.floor(n) : 60; })();
+  const ROUND_MS = ROUND_SEC * 1000, RESULT_MS = 3000;
+  if (!q.get('room')) {
+    const keep = new URLSearchParams(); keep.set('room', room);
+    for (const k of ['t', 'round', 'name', 'p2p', 'playtest', 'seed']) if (q.get(k)) keep.set(k, q.get(k));
+    history.replaceState(null, '', `?${keep}`);
+  }
   const transport = q.get('t') || 'auto';
   // ?p2p=blocked: direct links are switched off, so the room has to fall back to the relay (the playtest proves it); ?p2p=N is the peer to peer size.
   const blocked = q.get('p2p') === 'blocked';
@@ -76,6 +83,12 @@
   let audioCtx = null, audioUnlocked = false, soundsPlayed = 0, muted = false;
   try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { /* private mode */ }
   const particles = [], pops = [], leavers = [];
+  // Paint-only ambient motes (life that drifts on its own; never hits the network).
+  const motes = Array.from({ length: 18 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 18, vy: (Math.random() - 0.5) * 14,
+    r: 1.2 + Math.random() * 2.2, phase: Math.random() * 6.28,
+  }));
   let pulseUntil = 0, lastCollect = null, canvasDpr = 1;
   const peerIn = new Map(); // peer id -> join start time (pop-in ring)
   const recentJoins = [], recentLeaves = []; // playtest reads these after the short FX finishes
@@ -114,12 +127,43 @@
     while (particles.length + BURST_N > MAX_PARTICLES) particles.shift();
     for (let i = 0; i < BURST_N; i++) {
       const a = (Math.PI * 2 * i) / BURST_N + Math.random() * 0.4, sp = 60 + Math.random() * 140;
-      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.35 + Math.random() * 0.25, age: 0, r: 2.5 + Math.random() * 2.5 });
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.35 + Math.random() * 0.25, age: 0, r: 2.5 + Math.random() * 2.5, hue: 'cyan' });
     }
     pops.push({ x, y, age: 0, life: POP_MS / 1000 });
     pulseUntil = at + PULSE_MS;
     playPickup();
     lastCollect = { x, y, at, particles: BURST_N, pop: true, pulseMs: PULSE_MS, sound: audioUnlocked && !muted };
+  };
+  // Short confetti burst at round end (paint-only; every screen that applies orb-round-end fires it).
+  let confettiUntil = 0, lastRoundFx = null;
+  const playRoundEnd = () => {
+    if (!audioUnlocked || muted || !audioCtx) return;
+    try {
+      const t0 = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(392, t0);
+      osc.frequency.exponentialRampToValueAtTime(784, t0 + 0.18);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + 0.3);
+      soundsPlayed++;
+    } catch { /* autoplay / closed */ }
+  };
+  const confettiFx = () => {
+    const at = performance.now();
+    confettiUntil = at + 900;
+    const n = 28;
+    while (particles.length + n > MAX_PARTICLES) particles.shift();
+    for (let i = 0; i < n; i++) {
+      const x = W * (0.15 + Math.random() * 0.7), y = 40 + Math.random() * 80;
+      const a = Math.PI * (0.15 + Math.random() * 0.7), sp = 80 + Math.random() * 220;
+      particles.push({ x, y, vx: Math.cos(a) * sp * (Math.random() < 0.5 ? -1 : 1), vy: Math.sin(a) * sp, life: 0.55 + Math.random() * 0.45, age: 0, r: 2 + Math.random() * 3, hue: 'gold' });
+    }
+    playRoundEnd();
+    lastRoundFx = { at, particles: n };
   };
   const tickFx = (dt) => {
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -129,6 +173,31 @@
     for (let i = pops.length - 1; i >= 0; i--) { pops[i].age += dt; if (pops[i].age >= pops[i].life) pops.splice(i, 1); }
     for (let i = leavers.length - 1; i >= 0; i--) { if (performance.now() - leavers[i].t0 >= LEAVE_MS) leavers.splice(i, 1); }
     for (const [id, t0] of peerIn) if (performance.now() - t0 >= JOIN_MS) peerIn.delete(id);
+    for (const m of motes) {
+      m.phase += dt; m.x += m.vx * dt; m.y += m.vy * dt;
+      if (m.x < -10) m.x = W + 10; if (m.x > W + 10) m.x = -10;
+      if (m.y < -10) m.y = H + 10; if (m.y > H + 10) m.y = -10;
+    }
+  };
+  const drawCourt = () => {
+    // Soft floor wash + court lines so the arena reads as a place, not an empty card.
+    const grd = g.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, Math.max(W, H) * 0.65);
+    grd.addColorStop(0, 'rgba(40, 70, 100, 0.22)');
+    grd.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(120, 180, 220, 0.22)'; g.lineWidth = 2;
+    g.strokeRect(18, 18, W - 36, H - 36);
+    g.beginPath(); g.moveTo(W / 2, 18); g.lineTo(W / 2, H - 18); g.stroke();
+    g.beginPath(); g.arc(W / 2, H / 2, 56, 0, 7); g.stroke();
+    g.strokeStyle = 'rgba(120, 180, 220, 0.16)'; g.lineWidth = 1.5;
+    for (const [cx, cy] of [[48, 48], [W - 48, 48], [48, H - 48], [W - 48, H - 48]]) {
+      g.beginPath(); g.arc(cx, cy, 22, 0, 7); g.stroke();
+    }
+    for (const m of motes) {
+      const a = 0.25 + 0.2 * Math.sin(m.phase * 2);
+      g.beginPath(); g.arc(m.x, m.y, m.r, 0, 7);
+      g.fillStyle = `rgba(140, 210, 255, ${a})`; g.fill();
+    }
   };
   const drawFx = (now, ink) => {
     const pulseLeft = pulseUntil - now;
@@ -140,7 +209,7 @@
     for (const p of particles) {
       const a = 1 - p.age / p.life;
       g.beginPath(); g.arc(p.x, p.y, p.r * (0.6 + 0.4 * a), 0, 7);
-      g.fillStyle = `rgba(160, 245, 255, ${0.85 * a})`; g.fill();
+      g.fillStyle = p.hue === 'gold' ? `rgba(255, 210, 90, ${0.9 * a})` : `rgba(160, 245, 255, ${0.85 * a})`; g.fill();
     }
     g.font = 'bold 22px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const p of pops) {
@@ -245,6 +314,7 @@
   const tracks = new Map();
   const bots = [];
   // Host-authoritative orb game on sync.state / sync.action only (no timers asking the service). Scores keyed by peer id.
+  // Rounds: host owns phase + endsAt in the document; clients paint the clock from Date.now(); host migration keeps the same round.
   const ORB_N = 5, ORB_R = 14, TOUCH_R = 22;
   const orbPad = 40;
   const randOrb = () => ({ x: orbPad + Math.random() * (W - 2 * orbPad), y: orbPad + Math.random() * (H - 2 * orbPad) });
@@ -254,17 +324,42 @@
     for (let i = 0; i < ORB_N; i++) { const p = randOrb(); orbs.push({ id: `o${i}`, x: Math.round(p.x), y: Math.round(p.y), gen: 1 }); }
     return orbs;
   }
+  const peerName = (room, id) => {
+    if (!room || !id) return '—';
+    if (id === room.id) return room.name || id;
+    return room.peers.get(id)?.name || id;
+  };
+  const buildBoard = (room, scores) => {
+    const ids = new Set([...Object.keys(scores || {}), room.id, ...room.peers.keys()]);
+    return [...ids].map((id) => ({ id, name: peerName(room, id), score: scores[id] || 0 }))
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  };
   function wireOrbs(room) {
     if (!room || orbGames.has(room)) return orbGames.get(room);
-    const game = { orbs: [], scores: {}, seq: 0, applied: new Set(), sentTouch: '', touch: null, award: null };
+    const game = {
+      orbs: [], scores: {}, seq: 0, applied: new Set(), sentTouch: '',
+      touch: null, award: null, endRound: null, startRound: null,
+      round: 0, phase: '', endsAt: 0, playMs: ROUND_MS, winner: null, board: [],
+    };
     // Late joiners and host migration: the host's document is the truth; everyone else applies the copy.
     room.sync.state('orbs', {
-      get: () => ({ orbs: game.orbs, scores: game.scores, seq: game.seq }),
+      get: () => ({
+        orbs: game.orbs, scores: game.scores, seq: game.seq,
+        round: game.round, phase: game.phase, endsAt: game.endsAt, playMs: game.playMs,
+        winner: game.winner, board: game.board,
+      }),
       set: (s) => {
         if (!s || typeof s !== 'object') return;
         if (Array.isArray(s.orbs)) game.orbs = s.orbs.map((o) => ({ id: o.id, x: +o.x, y: +o.y, gen: +o.gen || 1 }));
         if (s.scores && typeof s.scores === 'object') game.scores = { ...s.scores };
         if (Number.isFinite(s.seq)) game.seq = s.seq;
+        if (Number.isFinite(s.round)) game.round = s.round;
+        if (s.phase === 'play' || s.phase === 'result') game.phase = s.phase;
+        if (Number.isFinite(s.endsAt)) game.endsAt = s.endsAt;
+        if (Number.isFinite(s.playMs)) game.playMs = s.playMs;
+        if (s.winner === null) game.winner = null;
+        else if (s.winner && typeof s.winner === 'object') game.winner = { id: String(s.winner.id || ''), name: String(s.winner.name || ''), score: +s.winner.score || 0 };
+        if (Array.isArray(s.board)) game.board = s.board.map((r) => ({ id: String(r.id || ''), name: String(r.name || ''), score: +r.score || 0 }));
       },
       rate: 8,
     });
@@ -274,6 +369,7 @@
       game.applied.add(data.n);
       if (game.applied.size > 200) { const keep = [...game.applied].slice(-80); game.applied = new Set(keep); }
       game.seq = Math.max(game.seq, data.n);
+      if (game.phase === 'result') return;
       const by = String(data.by || '');
       if (by) game.scores[by] = (game.scores[by] || 0) + 1;
       const orb = game.orbs.find((o) => o.id === data.orb);
@@ -282,16 +378,53 @@
       if (game.sentTouch.startsWith(`${data.orb}:`)) game.sentTouch = '';
     });
     game.touch = room.sync.action('orb-touch', (data, { authoritative }) => {
-      if (!authoritative || !data) return;
+      if (!authoritative || !data || game.phase !== 'play') return;
       const orb = game.orbs.find((o) => o.id === data.orb);
       if (!orb || (data.gen != null && data.gen !== orb.gen)) return;
       const p = randOrb();
       const n = game.seq + 1;
       game.award({ orb: orb.id, by: data.by, nx: Math.round(p.x), ny: Math.round(p.y), n });
     });
+    game.endRound = room.sync.action('orb-round-end', (data) => {
+      if (!data || data.n == null || game.applied.has(data.n)) return;
+      game.applied.add(data.n);
+      if (game.applied.size > 200) { const keep = [...game.applied].slice(-80); game.applied = new Set(keep); }
+      game.seq = Math.max(game.seq, data.n);
+      game.phase = 'result';
+      game.endsAt = Number.isFinite(data.endsAt) ? data.endsAt : Date.now() + RESULT_MS;
+      if (Number.isFinite(data.round)) game.round = data.round;
+      game.winner = data.winner && typeof data.winner === 'object'
+        ? { id: String(data.winner.id || ''), name: String(data.winner.name || '—'), score: +data.winner.score || 0 }
+        : null;
+      game.board = Array.isArray(data.board) ? data.board.map((r) => ({ id: String(r.id || ''), name: String(r.name || ''), score: +r.score || 0 })) : [];
+      confettiFx();
+    });
+    game.startRound = room.sync.action('orb-round-start', (data) => {
+      if (!data || data.n == null || game.applied.has(data.n)) return;
+      game.applied.add(data.n);
+      if (game.applied.size > 200) { const keep = [...game.applied].slice(-80); game.applied = new Set(keep); }
+      game.seq = Math.max(game.seq, data.n);
+      game.round = Number.isFinite(data.round) ? data.round : (game.round || 0) + 1;
+      game.phase = 'play';
+      game.playMs = Number.isFinite(data.playMs) ? data.playMs : ROUND_MS;
+      game.endsAt = Number.isFinite(data.endsAt) ? data.endsAt : Date.now() + game.playMs;
+      game.scores = {};
+      game.winner = null;
+      game.board = [];
+      game.sentTouch = '';
+      if (Array.isArray(data.orbs) && data.orbs.length === ORB_N) {
+        game.orbs = data.orbs.map((o) => ({ id: o.id, x: +o.x, y: +o.y, gen: +o.gen || 1 }));
+      } else game.orbs = freshOrbs();
+    });
     const boot = () => {
       if (!room.isHost) return;
-      if (game.orbs.length !== ORB_N) { game.orbs = freshOrbs(); game.scores = { ...game.scores }; }
+      // Host migration: keep phase/endsAt/scores from the document; only start a round when none is running.
+      if (game.phase === 'play' || game.phase === 'result') {
+        if (game.phase === 'play' && game.orbs.length !== ORB_N) game.orbs = freshOrbs();
+        return;
+      }
+      const playMs = game.playMs || ROUND_MS;
+      game.startRound({ n: (game.seq || 0) + 1, round: 1, playMs, endsAt: Date.now() + playMs, orbs: freshOrbs() });
     };
     boot();
     room.sync.onHost(() => { if (room.isHost) boot(); }); // onHost args are (hostId, previous); room.isHost is the flag
@@ -300,7 +433,7 @@
   }
   function touchAt(room, x, y) {
     const game = orbGames.get(room) || wireOrbs(room);
-    if (!game?.touch || !room?.id) return false;
+    if (!game?.touch || !room?.id || game.phase !== 'play') return false;
     for (const orb of game.orbs) {
       if (Math.hypot(orb.x - x, orb.y - y) <= TOUCH_R) {
         const key = `${orb.id}:${orb.gen}`;
@@ -314,10 +447,43 @@
   }
   function snapshot(room) {
     const game = room && orbGames.get(room);
-    if (!game) return { orbs: [], scores: {} };
-    return { orbs: game.orbs.map((o) => ({ ...o })), scores: { ...game.scores } };
+    if (!game) return { orbs: [], scores: {}, round: 0, phase: '', endsAt: 0, playMs: ROUND_MS, winner: null, board: [], leftMs: 0 };
+    const leftMs = game.endsAt ? Math.max(0, game.endsAt - Date.now()) : 0;
+    return {
+      orbs: game.orbs.map((o) => ({ ...o })), scores: { ...game.scores },
+      round: game.round, phase: game.phase, endsAt: game.endsAt, playMs: game.playMs,
+      winner: game.winner ? { ...game.winner } : null,
+      board: (game.board || []).map((r) => ({ ...r })),
+      leftMs, confetti: confettiUntil > performance.now(),
+    };
   }
-  window.hawkesNetOrbs = { wire: wireOrbs, touchAt, snapshot, ORB_N, ORB_R };
+  /** Host-only: restart a play phase with a short window (playtest ?round= hook). */
+  function beginTestRound(room, seconds) {
+    const game = room && (orbGames.get(room) || wireOrbs(room));
+    if (!game?.startRound || !room?.isHost) return false;
+    const sec = Number.isFinite(seconds) ? Math.max(3, Math.min(60, Math.floor(seconds))) : ROUND_SEC;
+    const playMs = sec * 1000;
+    const orbs = freshOrbs();
+    game.startRound({ n: game.seq + 1, round: Math.max(1, (game.round || 0) + 1), playMs, endsAt: Date.now() + playMs, orbs });
+    return true;
+  }
+  function hostRoundTick(room) {
+    const game = room && orbGames.get(room);
+    if (!game || !room.isHost || !game.endRound || !game.startRound) return;
+    const now = Date.now();
+    if (game.phase === 'play' && game.endsAt && now >= game.endsAt) {
+      const board = buildBoard(room, game.scores);
+      const winner = board[0] ? { ...board[0] } : null;
+      game.endRound({ n: game.seq + 1, round: game.round, endsAt: now + RESULT_MS, winner, board });
+    } else if (game.phase === 'result' && game.endsAt && now >= game.endsAt) {
+      const playMs = game.playMs || ROUND_MS;
+      game.startRound({ n: game.seq + 1, round: (game.round || 0) + 1, playMs, endsAt: now + playMs, orbs: freshOrbs() });
+    }
+  }
+  window.hawkesNetOrbs = {
+    wire: wireOrbs, touchAt, snapshot, beginTestRound, hostRoundTick,
+    ORB_N, ORB_R, ROUND_SEC, RESULT_MS, roundSec: () => ROUND_SEC,
+  };
   $('bots').onclick = async () => {
     // Bots: more players in this page (no singleton), wandering.
     for (let i = 0; i < 5; i++) {
@@ -413,6 +579,7 @@
     tickFx(dt);
     if (t - lastPanel >= 500) { lastPanel = t; refreshPanel(); }
     if (!net) return drawJoining();
+    hostRoundTick(net);
     const sp = 260 * dt;
     if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
     pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
@@ -423,13 +590,15 @@
       if (b.x < 10 || b.x > W - 10) b.a = Math.PI - b.a; if (b.y < 10 || b.y > H - 10) b.a = -b.a;
       b.x = Math.max(10, Math.min(W - 10, b.x)); b.y = Math.max(10, Math.min(H - 10, b.y));
       b.net.pose([b.x, 0, b.y], 0); touchAt(b.net, b.x, b.y);
+      hostRoundTick(b.net);
     }
     g.clearRect(0, 0, W, H);
+    drawCourt();
     g.font = '13px Inter, system-ui, sans-serif'; g.textAlign = 'center';
     const ink = getComputedStyle(document.body).color;
     const game = orbGames.get(net);
     // Glowing orbs under the players so dots stay readable; idle pulse is paint-only (no network).
-    if (game) {
+    if (game && game.phase !== 'result') {
       const pulse = 0.65 + 0.35 * Math.sin(t / 280);
       for (const o of game.orbs) {
         g.beginPath(); g.arc(o.x, o.y, ORB_R * 1.6, 0, 7);
@@ -440,7 +609,12 @@
       }
     }
     drawFx(t, ink); // collect burst/+1/arena flash and leave fades sit under the dots
+    // Result wash under the dots so the winner's gold ring stays bright; name + board drawn after.
+    if (game && game.phase === 'result') {
+      g.fillStyle = 'rgba(8, 10, 14, 0.4)'; g.fillRect(0, 0, W, H);
+    }
     const items = layout();
+    const winId = game?.phase === 'result' ? game.winner?.id : null;
     for (const it of items) {
       const joinT = peerIn.get(it.id);
       let scale = 1, ring = 0, alpha = 1;
@@ -449,22 +623,69 @@
         scale = 0.15 + 0.85 * (1 - Math.pow(1 - u, 3));
         ring = 1 - u; alpha = Math.min(1, 0.35 + 0.65 * u);
       }
+      if (winId && it.id === winId) scale *= 1.35 + 0.1 * Math.sin(t / 140);
       g.globalAlpha = alpha;
       if (ring > 0) {
         g.beginPath(); g.arc(it.x, it.y, it.r * (1.6 + 1.8 * (1 - ring)), 0, 7);
         g.strokeStyle = `rgba(255, 255, 255, ${0.75 * ring})`; g.lineWidth = 2.5; g.stroke();
+      }
+      if (winId && it.id === winId) {
+        g.beginPath(); g.arc(it.x, it.y, it.r * scale + 10 + 4 * Math.sin(t / 160), 0, 7);
+        g.strokeStyle = 'rgba(255, 220, 100, 0.9)'; g.lineWidth = 3; g.stroke();
       }
       g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r * scale, 0, 7); g.fill();
       if (it.me) { g.strokeStyle = ink; g.lineWidth = 2; g.stroke(); }
       if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
       g.globalAlpha = 1;
     }
+    // Round clock (top) and result titles — upright canvas text after dots.
+    let timerLeft = 0;
+    if (game && game.phase === 'play' && game.endsAt) {
+      timerLeft = Math.max(0, Math.ceil((game.endsAt - Date.now()) / 1000));
+      const urgent = timerLeft <= 10;
+      const pulse = urgent ? 0.7 + 0.3 * Math.sin(t / 120) : 1;
+      g.save();
+      g.font = `bold ${urgent ? 36 : 28}px Inter, system-ui, sans-serif`;
+      g.textAlign = 'center'; g.textBaseline = 'top';
+      g.globalAlpha = pulse;
+      g.fillStyle = urgent ? '#fbbf24' : ink;
+      g.fillText(String(timerLeft), W / 2, 10);
+      g.restore();
+    } else if (game && game.phase === 'result') {
+      const winName = game.winner?.name || 'Nobody';
+      const winScore = game.winner ? game.winner.score : 0;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#ffe27a';
+      g.font = 'bold 42px Inter, system-ui, sans-serif';
+      g.fillText(winName, W / 2, H * 0.28);
+      g.font = '18px Inter, system-ui, sans-serif';
+      g.fillStyle = ink;
+      g.fillText(game.winner ? `${winScore} orb${winScore === 1 ? '' : 's'}` : 'no scores this round', W / 2, H * 0.28 + 36);
+      const board = game.board || [];
+      g.font = '16px Inter, system-ui, sans-serif';
+      g.textAlign = 'left';
+      const top = Math.min(6, board.length);
+      const bw = 280, bx = (W - bw) / 2, by0 = H * 0.42;
+      for (let i = 0; i < top; i++) {
+        const row = board[i], yy = by0 + i * 26;
+        g.fillStyle = i === 0 ? '#ffe27a' : ink;
+        g.fillText(`${i + 1}. ${row.name}`, bx, yy);
+        g.textAlign = 'right'; g.fillText(String(row.score), bx + bw, yy); g.textAlign = 'left';
+      }
+      g.textAlign = 'center';
+    }
     window.hawkesNetDemoView = {
       w: W, h: H, dpr: canvasDpr,
       orbs: game ? game.orbs.map((o) => ({ id: o.id, x: o.x, y: o.y, r: ORB_R, gen: o.gen })) : [],
       scores: game ? { ...game.scores } : {},
+      round: game ? {
+        n: game.round, phase: game.phase, endsAt: game.endsAt, playMs: game.playMs, leftSec: timerLeft,
+        winner: game.winner ? { ...game.winner } : null,
+        board: (game.board || []).map((r) => ({ ...r })),
+        confetti: confettiUntil > t,
+      } : null,
       items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
-      fx: { particles: particles.length, pops: pops.length, pulse: pulseUntil > t, leavers: leavers.length, muted, unlocked: audioUnlocked },
+      fx: { particles: particles.length, pops: pops.length, pulse: pulseUntil > t, leavers: leavers.length, muted, unlocked: audioUnlocked, confetti: confettiUntil > t },
     };
     requestAnimationFrame(frame);
   }
@@ -491,7 +712,12 @@
       $('peers').appendChild(li);
     }
     const gstate = orbGames.get(net);
-    $('orbline').textContent = gstate ? `${gstate.orbs.length} lit · you ${gstate.scores[net.id] || 0}` : '–';
+    if (!gstate) $('orbline').textContent = '–';
+    else if (gstate.phase === 'result') $('orbline').textContent = `round ${gstate.round} · ${gstate.winner?.name || '—'} wins`;
+    else {
+      const left = gstate.endsAt ? Math.max(0, Math.ceil((gstate.endsAt - Date.now()) / 1000)) : 0;
+      $('orbline').textContent = `${gstate.orbs.length} lit · you ${gstate.scores[net.id] || 0} · ${left}s`;
+    }
   }
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
@@ -510,8 +736,9 @@
   const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
-  const { orbChecks } = await import('/orbs-playtest.mjs');
+  const { orbChecks, roundChecks } = await import('/orbs-playtest.mjs');
   const openPlaytestPeer = (name, sub) => join(room, { project: 'netdemo', endpoint: location.origin, transport, direct, name, role: 'player', config, sub, log: false });
+  const openInRoom = (r, name, sub) => join(r, { project: 'netdemo', endpoint: location.origin, transport: 'relay', direct: false, name, role: 'player', config, sub, log: false });
   const playtest = installNetPlaytest({
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBlocked: async (r, name, logged) => { const n = await join(r, { project: 'netdemo', endpoint: location.origin, transport: 'auto', direct: false, name, role: 'player', config: { p2pMax: 8, maxPlayers: 64, profile: 'light' }, sub: `fb-${Math.random()}`, log: false }); if (logged) n.when('transport', (e) => { if (e.why === 'links failed') log("Couldn't connect directly, switched to relay"); }); return n; },
@@ -530,7 +757,7 @@
       await orbChecks({ ...c, collector: c.bot, openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: () => {} });
       await siteChecks({ check: c.check, metric: c.metric });
     },
-    // Extends two-players: open a bot as B, steer onto an orb, assert A sees the score and respawn (real peers stay for the meet checks).
+    // Extends two-players: orb collect, then short-round winner/restart (?round=8 / beginTestRound) and host-migration continuity.
     afterTwoPlayers: async (c) => {
       let bot = null;
       try {
@@ -538,6 +765,10 @@
         await c.until(() => bot && c.main.peers.has(bot.id), 15000, 'the orb collector bot to join');
         await orbChecks({ check: c.check, main: c.main, collector: bot, until: c.until, wait: c.wait, metric: c.metric,
           openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: c.event || (() => {}) });
+        await roundChecks({
+          check: c.check, main: c.main, other: bot, until: c.until, wait: c.wait, metric: c.metric,
+          event: c.event || (() => {}), openInRoom,
+        });
       } finally { try { await bot?.leave(); } catch { /* gone */ } }
     },
   });
