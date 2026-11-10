@@ -21,6 +21,7 @@ import * as projects from './projects.ts';
 import * as api from './api.ts';
 import { refuse } from './ws.ts';
 import { errorBody, errorsHtml } from './errors.ts';
+import { apiDocsHtml } from './api-docs.ts';
 import type { Client } from './store.ts';
 
 export type HubOptions = {
@@ -117,6 +118,7 @@ export async function startHub(o: HubOptions = {}) {
   const feedbackPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'feedback-playtest.mjs');
   const phonePlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'phone-playtest.mjs');
   const drainPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'drain-playtest.mjs');
+  const apiPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'api-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
@@ -152,6 +154,11 @@ export async function startHub(o: HubOptions = {}) {
       return void res.end(fs.readFileSync(route === '/site.css' ? siteCss : siteJs));
     }
     // The demo: dots in a room, peer to peer, then the relay (open it in two tabs).
+    // The API reference (src/api-docs.ts, public/api.html): every export, method, option and event from the SDK's JSDoc.
+    if (route === '/docs/api' || route === '/docs' || route === '/api.html') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(apiDocsHtml());
+    }
     // The error codes (src/errors.ts, docs/errors.md): every error's `docs` link points here.
     if (route === '/docs/errors') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff' });
@@ -193,6 +200,10 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/drain-playtest.mjs') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(drainPlaytest));
+    }
+    if (route === '/api-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(apiPlaytest));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

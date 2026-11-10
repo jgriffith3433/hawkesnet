@@ -15,6 +15,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { packageTarball } from '../src/tarball.ts';
+import { apiDocsHtml, validateSdkJsdoc } from '../src/api-docs.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'dist');
@@ -32,6 +33,8 @@ const unity = json(path.join(UNITY, 'package.json')).version;
 const problems = [];
 if (coreVersion !== sdkPkg.version) problems.push(`sdk/js/hawkes-net-core.mjs VERSION is ${coreVersion}, sdk/js/package.json says ${sdkPkg.version}: bump both together`);
 if (service !== sdkPkg.version) problems.push(`package.json is ${service}, the SDK is ${sdkPkg.version}: keep them the same`);
+const jsdocCheck = validateSdkJsdoc();
+if (!jsdocCheck.ok) problems.push(...jsdocCheck.errors);
 if (problems.length) { for (const p of problems) console.error(`build: ${p}`); process.exit(1); }
 
 let commit = process.env.HAWKES_COMMIT || process.env.GITHUB_SHA || '';
@@ -39,8 +42,14 @@ if (!commit) try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: RO
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'sdk'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'docs'), { recursive: true });
 const files = [];
 const put = (name, body) => { fs.writeFileSync(path.join(OUT, name), body); files.push({ name, bytes: Buffer.byteLength(body) }); };
+
+// The API reference page generated from the JSDoc in sdk/js/hawkes-net.mjs and sdk/js/hawkes-net-core.mjs.
+const apiHtml = apiDocsHtml();
+fs.writeFileSync(path.join(ROOT, 'public', 'api.html'), apiHtml);
+put('docs/api.html', apiHtml);
 
 // The SDK as the service serves it (src/api.ts: /sdk/hawkes-net.mjs, /sdk/hawkes-net@1.mjs, the core, the types).
 const major = sdkPkg.version.split('.')[0];

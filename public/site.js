@@ -3,7 +3,7 @@
 // the header is made once, blocks are found by an observer, and "Copied" ends on the CSS animation's own event.
 (() => {
   const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(location.hostname); // there "/" is the dashboard, so Home is /home
-  const links = [['home', dashHost ? '/home' : '/', 'Home'], ['docs', '/docs/errors', 'Docs'], ['quickstart', '/quickstart', 'Quickstart'], ['demo', '/demo', 'Demo']];
+  const links = [['home', dashHost ? '/home' : '/', 'Home'], ['docs', '/docs/api', 'Docs'], ['quickstart', '/quickstart', 'Quickstart'], ['demo', '/demo', 'Demo']];
   const p = location.pathname.replace(/\/+$/, '') || '/';
   const here = p === '/' || p === '/home' ? 'home' : p.startsWith('/docs') ? 'docs' : p === '/quickstart' ? 'quickstart' : p === '/demo' ? 'demo' : '';
   const header = document.createElement('header');

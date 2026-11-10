@@ -984,6 +984,8 @@
     },
   });
   addSiteScenario(playtest);
+  const { addApiScenario } = await import('/api-playtest.mjs');
+  addApiScenario(playtest);
   const { addFeedbackScenario } = await import('/feedback-playtest.mjs');
   addFeedbackScenario(playtest, {
     main: () => net,

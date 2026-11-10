@@ -15,13 +15,35 @@
 // RTCPeerConnection passed as `rtc`). No module-wide singleton: a page can join several rooms or run bot peers.
 import * as core from './hawkes-net-core.mjs';
 
+/**
+ * The SDK version string, checked by the ticket service against the project's minimum (`sdk_too_old` when below it).
+ * @sig const VERSION: string
+ * @example import { VERSION } from '@hawkesgen/net'; console.log(VERSION);
+ */
 export const VERSION = core.VERSION;
+/**
+ * Wire protocol versions spoken by this client (`[3]`), sent on ticket requests and checked against `sdk_too_old`.
+ * @sig const protocols: readonly number[]
+ * @example import { protocols } from '@hawkesgen/net'; console.log(protocols[0]);
+ */
 export const protocols = Object.freeze([3]);
+/**
+ * Snapshot interpolation buffer that plays stamped poses or values smoothly in the past with velocity carry and slerp.
+ * @sig class Track
+ * @example const track = new Track({ pos: [0, 1, 2], yaw: [4] }); track.push(net.now(), [1, 0, 2, 0, 1.5]);
+ */
 export const Track = core.Track;
+/**
+ * Per-sender transit time and jitter estimator shared across a room's `Track` instances.
+ * @sig class Links
+ * @example const links = new Links(() => Date.now()); links.note('p1', Date.now() - 25);
+ */
 export const Links = core.Links;
-/** The Hawkes Net service a join uses when it names none: https://net.hawkesgen.ai, or the one the page names in
- *  globalThis.HAWKES_NET_ENDPOINT (an origin, e.g. https://hawkesnet.hawkesgen.ai: Hawkes Studio sets it on its beta
- *  sites, so a game's beta plays on beta Hawkes Net and its live site on the real one, with no change to the game). */
+/**
+ * The Hawkes Net service origin used when `join` names no `endpoint`: `https://net.hawkesgen.ai` or `globalThis.HAWKES_NET_ENDPOINT`.
+ * @sig defaultEndpoint(): string
+ * @example const origin = defaultEndpoint();
+ */
 export function defaultEndpoint() {
   const asked = typeof globalThis !== 'undefined' ? globalThis.HAWKES_NET_ENDPOINT : undefined;
   return typeof asked === 'string' && /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(asked) ? asked : 'https://net.hawkesgen.ai';
@@ -109,17 +131,32 @@ function every(ms, fn) {
   startClock();
   return () => { clock.jobs.delete(job); stopClock(); };
 }
-/** True while this page is in the background: hidden, or no animation frame for `ms` (a window covered by another). */
+/**
+ * Returns true while this page is hidden or has received no animation frame for `ms` milliseconds.
+ * @sig inBackground(ms?: number): boolean
+ * @example if (inBackground(1000)) console.log('tab is hidden or covered');
+ */
 export function inBackground(ms = 1000) {
   if (!hasPage) return false;
   watchFrames();
   return Boolean(document.hidden) || wall() - frameAt > ms;
 }
 /**
- * Keeps a game going while its page is in the background (docs/net.md "In the background"): fn() about `hz` times a
- * second (default 60), only while the page gets no animation frames (a hidden tab, a minimised or covered window), so
- * a rollback fight, a turn timer or a host's simulation doesn't stop for the other players. Run your game's step in it,
- * not its drawing. o: { hz, afterMs (no frames for this long first, default 100) }. Returns stop().
+ * Tick rate in cycles per second for `background(fn, { hz })` when animation frames stop (default `60`).
+ * @option hz
+ * @sig hz?: number
+ * @example const stop = background(() => stepSimulation(), { hz: 60 });
+ */
+/**
+ * How long in milliseconds without an animation frame before `background` starts calling `fn` (default `100`).
+ * @option afterMs
+ * @sig afterMs?: number
+ * @example const stop = background(() => stepSimulation(), { hz: 30, afterMs: 150 });
+ */
+/**
+ * Runs `fn` on the worker-backed background clock at `hz` times a second only while the page gets no animation frames; returns `stop()`.
+ * @sig background(fn: () => void, o?: BackgroundOptions): () => void
+ * @example const stop = background(() => stepGame(1 / 60), { hz: 60, afterMs: 100 });
  */
 export function background(fn, o = {}) {
   watchFrames();
@@ -135,13 +172,111 @@ class Emitter {
 }
 
 /**
- * Joins a room. Resolves when the room's state has arrived (`ready`), rejects when the join is refused.
- * o: { project, transport: 'relay' (default) | 'auto' | 'p2p', ticket (a string, or a function returning Gen's ticket answer),
- *      endpoint (the Hawkes Net service, default defaultEndpoint(): https://net.hawkesgen.ai or the page's HAWKES_NET_ENDPOINT), key (a Gen API key: servers and bots only), name, sub, role,
- *      config (the room's shape if this join creates it), leaveOnHide (default true), away (default true: tell the room
- *      when this page is in the background, docs/net.md "Away"), rtc ({ RTCPeerConnection } in Node),
- *      WebSocket (a WebSocket class, default the global one), log (false to silence),
- *      onRaw (an engine with its own multiplayer logic: every room message in the core's shapes, see `raw` below) }
+ * The Hawkes project slug in Hawkes Gen (`project_not_found` when unknown, `project_disabled` when paused, `site_not_allowed` when the origin is not on the project's site list).
+ * @option project
+ * @sig project?: string
+ * @example const net = await join('lobby', { project: 'mygame' });
+ */
+/**
+ * Room transport mode: `'relay'` (default, WebSocket to a Hawkes relay), `'auto'` (WebRTC host-star moving to the relay on growth), or `'p2p'`.
+ * @option transport
+ * @sig transport?: 'relay' | 'auto' | 'p2p'
+ * @example const net = await join('match-1', { project: 'mygame', transport: 'auto' });
+ */
+/**
+ * A signed room ticket string or an async function returning `{ ticket, relayUrl, ice }` (`ticket_refused` when invalid or expired, `resume_gone` when a resume token's room is gone).
+ * @option ticket
+ * @sig ticket?: string | (() => Promise<{ ticket: string, relayUrl?: string, signalUrl?: string, ice?: RTCIceServer[] }>)
+ * @example const net = await join('lobby', { ticket: () => fetch('/api/ticket').then((r) => r.json()) });
+ */
+/**
+ * Relay WebSocket URL (`wss://...`) required when passing a raw `ticket` string instead of a ticket object.
+ * @option url
+ * @sig url?: string
+ * @example const net = await join('lobby', { ticket: signedJwt, url: 'wss://net.hawkesgen.ai/v1/net/relay' });
+ */
+/**
+ * Origin of the Hawkes Net ticket service (defaults to `defaultEndpoint()`; returns `no_node` or `node_draining` when no relay node is ready).
+ * @option endpoint
+ * @sig endpoint?: string
+ * @example const net = await join('lobby', { project: 'mygame', endpoint: 'https://net.hawkesgen.ai' });
+ */
+/**
+ * Hawkes Gen API key for server bots and trusted tools (`key_invalid` when rejected; required when requesting a `server` role or `role_needs_key` is returned).
+ * @option key
+ * @sig key?: string
+ * @example const bot = await join('lobby', { project: 'mygame', key: process.env.HAWKES_KEY, role: 'server' });
+ */
+/**
+ * Display name for this player in `room.peers` and `peer:join` events (truncated to 40 characters by the ticket service).
+ * @option name
+ * @sig name?: string
+ * @example const net = await join('lobby', { project: 'mygame', name: 'Ada' });
+ */
+/**
+ * Stable player subject identifier used across reconnects (defaults to a random ID persisted in `localStorage`).
+ * @option sub
+ * @sig sub?: string
+ * @example const net = await join('lobby', { project: 'mygame', sub: 'user-42' });
+ */
+/**
+ * Peer role in the room: `'player'` (default), `'spectator'` (never hosts or sends state), or `'server'` (requires `key`, else `role_needs_key`).
+ * @option role
+ * @sig role?: 'player' | 'spectator' | 'server'
+ * @example const spec = await join('arena', { project: 'mygame', role: 'spectator' });
+ */
+/**
+ * Room shape (`maxPlayers`, `interest`, `quant`) applied when this join creates the room (`rooms_limit` or `players_limit` when project caps are reached).
+ * @option config
+ * @sig config?: { maxPlayers?: number, interest?: { tiers?: [number | null, number, number][], farAvatarM?: number } | null, quant?: { posStep?: number, velStep?: number, spinStep?: number, keyframeMs?: number } }
+ * @example const net = await join('race-1', { project: 'mygame', config: { maxPlayers: 16, interest: null } });
+ */
+/**
+ * Leaves the room automatically on browser `pagehide` when true (default `true`).
+ * @option leaveOnHide
+ * @sig leaveOnHide?: boolean
+ * @example const net = await join('lobby', { project: 'mygame', leaveOnHide: false });
+ */
+/**
+ * Announces when this page is hidden or covered for 2 seconds (`away` / `peer:away`) and hands off hosting when true (default `true`).
+ * @option away
+ * @sig away?: boolean
+ * @example const net = await join('lobby', { project: 'mygame', away: true });
+ */
+/**
+ * Set to `false` to skip WebRTC direct links in `'auto'` mode and move immediately to the relay.
+ * @option direct
+ * @sig direct?: boolean
+ * @example const net = await join('lobby', { project: 'mygame', transport: 'auto', direct: false });
+ */
+/**
+ * Custom WebRTC provider (`{ RTCPeerConnection }`) for Node 24 bots joining peer-to-peer rooms.
+ * @option rtc
+ * @sig rtc?: { RTCPeerConnection: typeof RTCPeerConnection }
+ * @example const net = await join('lobby', { project: 'mygame', transport: 'p2p', rtc: { RTCPeerConnection } });
+ */
+/**
+ * Custom `WebSocket` constructor (defaults to `globalThis.WebSocket`).
+ * @option WebSocket
+ * @sig WebSocket?: typeof WebSocket
+ * @example const net = await join('lobby', { project: 'mygame', WebSocket: CustomWebSocket });
+ */
+/**
+ * Set to `false` to silence `[hawkes-net]` console error logging when a `problem` event fires.
+ * @option log
+ * @sig log?: boolean
+ * @example const net = await join('lobby', { project: 'mygame', log: false });
+ */
+/**
+ * Callback receiving every raw core message (`hello`, `join`, `leave`, `host`, `me`, `xf`, `own`, `ops`, `ev`, `clear`) for custom engines.
+ * @option onRaw
+ * @sig onRaw?: (msg: Record<string, any>) => void
+ * @example const net = await join('lobby', { project: 'mygame', onRaw: (m) => console.log(m.t) });
+ */
+/**
+ * Joins `room` (`room_invalid` if the name is not 1–96 characters of `A-Za-z0-9_.:/-`, `ticket_rate_limited` when throttled); resolves with the connected `Room` on `ready`.
+ * @sig join(room: string, o?: JoinOptions): Promise<Room>
+ * @example const net = await join('lobby', { project: 'mygame', name: 'Ada' });
  */
 export async function join(room, o = {}) {
   const r = new Room(room, o);
@@ -185,16 +320,64 @@ class Room {
   }
 
   // ================================================================ the public API
+  /**
+   * True when this player is the room's current host (`room.host === room.id`).
+   * @method room.isHost
+   * @sig room.isHost: boolean
+   * @example if (net.isHost) spawnWave();
+   */
   get isHost() { return this.host !== null && this.host === this.id; }
-  /** Players whose page is in the background right now (their `away` is true; event 'peer:away'). */
+  /**
+   * Peers whose page is currently in the background (`peer.away === true`; updated on `peer:away`).
+   * @method room.awayPeers
+   * @sig room.awayPeers: PeerInfo[]
+   * @example const awayNames = net.awayPeers.map((p) => p.name);
+   */
   get awayPeers() { return [...this.peers.values()].filter((p) => p.away); }
-  /** Says this player is away (or back) now: for bots, tests, and engines that know better than the page (a game
-   *  paused in its own menu). In a browser the page's own state takes over again the next time it changes. */
+  /**
+   * Marks this player as away or back immediately (for bots, tests, or in-game pause menus) and emits `away`.
+   * @method room.setAway
+   * @sig room.setAway(on: boolean): void
+   * @example net.setAway(true);
+   */
   setAway(on) { if (!this.closed && Boolean(on) !== this.away) this._setAway(Boolean(on)); }
-  /** The shared clock (ms): the room node's. It never jumps: a correction is eased in. */
+  /**
+   * Returns the shared room clock in milliseconds, smoothly eased to match the relay node's clock.
+   * @method room.now
+   * @sig room.now(): number
+   * @example const stamp = net.now();
+   */
   now() { return now() + this.offset; }
-  /** Sends a message to the room. `kind` is the game's name for it; `data` is JSON-able (or Uint8Array).
-   *  opt: { reliable (default true: once, in order), to (one peer), self (me too, in order), key (unreliable: the newest wins) } */
+  /**
+   * Delivers `room.send` once and in order when true (default `true`), or coalesces by `key` when `false`.
+   * @option reliable
+   * @sig reliable?: boolean
+   * @example net.send('aim', [dx, dy], { reliable: false, key: 'aim' });
+   */
+  /**
+   * Target peer ID for a direct `room.send` or `room.express` message instead of broadcasting to the whole room.
+   * @option to
+   * @sig to?: string
+   * @example net.send('whisper', 'psst', { to: peerId });
+   */
+  /**
+   * Delivers a `room.send` message back to this sender in room order when true (default `false`).
+   * @option self
+   * @sig self?: boolean
+   * @example net.send('turn', { move: 'e4' }, { self: true });
+   */
+  /**
+   * Coalescing slot name for unreliable `room.send` calls (`reliable: false`) within the same 33 ms flush window.
+   * @option key
+   * @sig key?: string
+   * @example net.send('cursor', [x, y], { reliable: false, key: 'cursor' });
+   */
+  /**
+   * Sends a message of `kind` with JSON-serializable or `Uint8Array` `data` to the room (or one peer via `opt.to`).
+   * @method room.send
+   * @sig room.send(kind: string, data?: any, opt?: SendOptions): void
+   * @example net.send('chat', { text: 'gg' }, { reliable: true });
+   */
   send(kind, data = null, opt = {}) {
     const m = { t: 'ev', name: String(kind).slice(0, 64), data };
     if (opt.to) m.to = opt.to;
@@ -206,14 +389,18 @@ class Room {
       this.q.rel.push(m);
     } else this.q.unrel.set(opt.key || m.name, m);
   }
-  /** fn(data, from, meta) for messages of a kind ('*' for every kind). Returns off(). */
+  /**
+   * Subscribes `fn(data, from, meta)` to room messages of `kind` (or `'*'` for every message kind); returns `off()`.
+   * @method room.on
+   * @sig room.on(kind: string, fn: (data: any, from: PeerInfo | null, meta: { at: number, reliable: boolean, kind: string }) => void): () => void
+   * @example const off = net.on('chat', (data, from) => console.log(from?.name, data));
+   */
   on(kind, fn) { return this.msgs.on(kind, fn); }
   /**
-   * The game's own bytes, now (docs/net.md "Express"): for what can't wait for the next send (a fighting game's inputs).
-   * Sent the moment it's called, forwarded by the relay or the host the moment it arrives, never queued or sent again;
-   * between peers on an unordered, no-retransmit channel. May be lost or come out of order: carry your own frame numbers
-   * (and repeat what wasn't acknowledged). bytes: a Uint8Array (or any ArrayBuffer view), at most 1200 bytes. opt: { to }.
-   * Returns false when there is no way out right now.
+   * Sends raw `Uint8Array` `bytes` (up to 1200 bytes) immediately without waiting for the 33 ms bundle or retransmitting; returns `false` if offline.
+   * @method room.express
+   * @sig room.express(bytes: Uint8Array | ArrayBufferView | ArrayBuffer, opt?: { to?: string }): boolean
+   * @example net.express(new Uint8Array([frameNo, buttons]));
    */
   express(bytes, opt = {}) {
     if (this.closed) return false;
@@ -235,7 +422,18 @@ class Room {
     this._control({ c: 'sig', to: p.host, kind: 'data', body: b64(f) });
     return true;
   }
-  /** fn(bytes: Uint8Array, from: peer id) for every express from another player. Returns off(). */
+  /**
+   * Fires when an immediate `express` byte frame arrives from another peer (`onExpress` or `when('express', fn)`).
+   * @event express
+   * @sig net.onExpress((bytes: Uint8Array, from: string) => void): () => void
+   * @example net.onExpress((bytes, from) => applyInput(from, bytes));
+   */
+  /**
+   * Subscribes `fn(bytes, fromPeerId)` to incoming `express` frames; returns `off()`.
+   * @method room.onExpress
+   * @sig room.onExpress(fn: (bytes: Uint8Array, from: string) => void): () => void
+   * @example const off = net.onExpress((bytes, from) => applyInput(from, bytes));
+   */
   onExpress(fn) { return this.ev.on('express', fn); }
   _expressIn(u8) {
     const x = core.readExpress(u8);
@@ -243,21 +441,99 @@ class Room {
     this.st.expressDown++;
     this.ev.emit('express', x.payload, x.from);
   }
-  /** Connection events: status, ready, peer:join, peer:leave, peer:away ({ peer, away }), away ({ away }: this page),
-   *  host ({ host, previous, reason: 'first' | 'host left' | 'host away' }), transport, problem. Returns off(). */
+  /**
+   * Fires when the room or lobby connection state changes (`connecting`, `online`, `reconnecting`, `closed`, `off`, `offline`, `full`).
+   * @event status
+   * @sig net.when('status', (e: { status: string, peers?: number, transport?: string, area?: string, room?: string }) => void): () => void
+   * @example net.when('status', ({ status }) => console.log('status:', status));
+   */
+  /**
+   * Fires when the room's initial hello or reconnect state arrives (`resumed` is true after a seamless resume; `resume_gone` triggers a fresh join).
+   * @event ready
+   * @sig net.when('ready', (e: { peers: PeerInfo[], host: string, resumed: boolean }) => void): () => void
+   * @example net.when('ready', ({ peers, host }) => console.log(peers.length, host));
+   */
+  /**
+   * Fires when another player joins the room.
+   * @event peer:join
+   * @sig net.when('peer:join', (peer: PeerInfo) => void): () => void
+   * @example net.when('peer:join', (peer) => console.log(peer.name, 'joined'));
+   */
+  /**
+   * Fires when another player leaves, times out, or is removed from the room.
+   * @event peer:leave
+   * @sig net.when('peer:leave', (e: { peer: PeerInfo, reason: string }) => void): () => void
+   * @example net.when('peer:leave', ({ peer, reason }) => console.log(peer.id, reason));
+   */
+  /**
+   * Fires when another player's page goes into the background or returns to the foreground.
+   * @event peer:away
+   * @sig net.when('peer:away', (e: { peer: PeerInfo, away: boolean }) => void): () => void
+   * @example net.when('peer:away', ({ peer, away }) => setDimmed(peer.id, away));
+   */
+  /**
+   * Fires when this page's own background state changes (`away: true` after 2 s hidden or covered, `false` on return).
+   * @event away
+   * @sig net.when('away', (e: { away: boolean }) => void): () => void
+   * @example net.when('away', ({ away }) => console.log('local away:', away));
+   */
+  /**
+   * Fires when the room's host changes (`reason`: `'first'`, `'host left'`, or `'host away'`).
+   * @event host
+   * @sig net.when('host', (e: { host: string, previous: string | null, reason: 'first' | 'host left' | 'host away' }) => void): () => void
+   * @example net.when('host', ({ host, reason }) => console.log('new host:', host, reason));
+   */
+  /**
+   * Fires when a peer-to-peer room migrates to the Hawkes relay without dropping players or state.
+   * @event transport
+   * @sig net.when('transport', (e: { from: 'p2p', to: 'relay', why: string }) => void): () => void
+   * @example net.when('transport', ({ to, why }) => console.log('moved to', to, why));
+   */
+  /**
+   * Fires on ticket or room errors (`code` is `'ticket'`, `'capped'`, `'reload'`, `'full'`, or `'refused'`; `detail` carries the server code such as `room_invalid`, `project_not_found`, `key_invalid`, `site_not_allowed`, `sdk_too_old`, `rooms_limit`, `players_limit`, `ticket_rate_limited`, `no_node`, `node_draining`, `ticket_refused`, `role_needs_key`, or `project_disabled`).
+   * @event problem
+   * @sig net.when('problem', (e: { code: 'ticket' | 'capped' | 'reload' | 'full' | 'refused', detail: string }) => void): () => void
+   * @example net.when('problem', ({ code, detail }) => console.warn(code, detail));
+   */
+  /**
+   * Subscribes `fn` to lifecycle and connection events (`status`, `ready`, `peer:join`, `peer:leave`, `peer:away`, `away`, `host`, `transport`, `problem`); returns `off()`.
+   * @method room.when
+   * @sig room.when(event: string, fn: (payload: any) => void): () => void
+   * @example const off = net.when('peer:join', (peer) => addAvatar(peer));
+   */
   when(event, fn) { return this.ev.on(event, fn); }
-  /** My avatar: a position, a heading and any small extra values (flags, what I hold). The newest goes each send. */
+  /**
+   * Queues this player's avatar position `[x, y, z]`, `yaw` (radians), and optional `extra` fields for the next 33 ms send.
+   * @method room.pose
+   * @sig room.pose(p: [number, number, number], yaw?: number, extra?: Record<string, any> | null): void
+   * @example net.pose([x, y, z], yaw, { anim: 'run' });
+   */
   pose(p, yaw = 0, extra = null) { this.q.me = { t: 'me', at: this.now(), s: { ...(extra || {}), p: [r3(p[0]), r3(p[1]), r3(p[2])], y: r2(yaw) } }; }
-  /** Other players' avatars: fn(peerId, state { p, y, ...extra }, at). Returns off(). */
+  /**
+   * Fires when another player's avatar pose update arrives.
+   * @event pose
+   * @sig net.onPose((peerId: string, state: { p: [number, number, number], y: number, [k: string]: any }, at: number) => void): () => void
+   * @example net.onPose((id, state, at) => moveAvatar(id, state.p, state.y, at));
+   */
+  /**
+   * Subscribes `fn(peerId, state, at)` to other players' avatar poses; returns `off()`.
+   * @method room.onPose
+   * @sig room.onPose(fn: (peerId: string, state: { p: [number, number, number], y: number, [k: string]: any }, at: number) => void): () => void
+   * @example const off = net.onPose((id, s) => updatePeer(id, s.p, s.y));
+   */
   onPose(fn) { return this.ev.on('pose', fn); }
-  /** State sync, ownership and snapshot buffers (the portal's H.sync). */
+  /**
+   * State synchronization, authoritative actions, entity ownership, and snapshot interpolation (`RoomSync`).
+   * @method room.sync
+   * @sig room.sync: RoomSync
+   * @example net.sync.push('crate-1', [x, y, z]);
+   */
   get sync() { return this._sync || (this._sync = this._makeSync()); }
   /**
-   * For an engine with its own multiplayer logic (hawkesgen.ai's play/net.js): it gets every room message through
-   * `onRaw` (join option) in the core's shapes ({ t: 'hello' | 'join' | 'leave' | 'host' | 'me' | 'xf' | 'own' | 'ops' | 'ev' | 'clear' }),
-   * and sends its own here: { t: 'me', at, s }, { t: 'xf', at, x: [[id, mask, ...values]] }, { t: 'own', id, on, lock },
-   * { t: 'ev', name, data, self?, to?, reliable? }, { t: 'clear' }. Hawkes Net still does the rest: the transport, moving the
-   * room, reconnecting, exactly-once reliable messages and the clock.
+   * Low-level raw message sender (`{ send(msg) }`) paired with the `onRaw` join option for engines with their own room protocol.
+   * @method room.raw
+   * @sig room.raw: { send: (m: Record<string, any>) => void }
+   * @example net.raw.send({ t: 'me', at: net.now(), s: { p: [0, 0, 0], y: 0 } });
    */
   get raw() {
     return {
@@ -274,11 +550,28 @@ class Room {
     };
   }
   _raw(m) { if (this.onRaw) { try { this.onRaw(m); } catch (e) { console.error('[hawkes-net] onRaw:', e); } } }
+  /**
+   * Returns live counters for transport mode, bytes/messages up and down, RTT, clock offset, migrations, and reconnects.
+   * @method room.stats
+   * @sig room.stats(): RoomStats
+   * @example const { rttMs, transport, upBytes } = net.stats();
+   */
   stats() {
     return { transport: this.transport, protocol: 3, seconds: (wall() - this.st.since) / 1000, upBytes: this.st.up, downBytes: this.st.down, upMsgs: this.st.upMsgs, downMsgs: this.st.downMsgs, expressUp: this.st.expressUp, expressDown: this.st.expressDown, rttMs: this.rtt, clockOffsetMs: Math.round(this.offset), migrations: this.st.migrations, linkRetries: this.st.linkRetries, reconnects: this.st.reconnects };
   }
-  /** Asks to move the room to the relay (a game that knows it will grow). */
+  /**
+   * Asks the signalling node to move a peer-to-peer room onto the Hawkes relay seamlessly.
+   * @method room.migrate
+   * @sig room.migrate(why?: string): void
+   * @example net.migrate('match starting');
+   */
   migrate(why = 'game asked') { this._control({ c: 'migrate', step: 'propose', why }); }
+  /**
+   * Flushes pending messages, closes WebRTC and WebSocket connections, and marks the room `'closed'`.
+   * @method room.leave
+   * @sig room.leave(reason?: string): Promise<void>
+   * @example await net.leave('finished');
+   */
   async leave(reason = 'left') {
     if (this.closed) return;
     this._flush();
@@ -1044,7 +1337,12 @@ class Room {
   _makeSync() {
     const self = this;
     return {
-      /** name, { get, set, rate, owner: 'host' | 'everyone' | () => bool, where, important }. */
+      /**
+       *Registers a named key-value state synced across the room (`def.get()` read on the owner at `def.rate` Hz, `def.set(copy, changedKeys, from, meta)` called on others); returns `{ remove(), resend() }`.
+       * @method sync.state
+       * @sig sync.state(name: string, def: { get: () => Record<string, any>, set: (state: Record<string, any>, changed: string[], from: PeerInfo | null, meta: { at: number, from: string | null }) => void, rate?: number, owner?: 'host' | 'everyone' | (() => boolean), where?: () => [number, number, number?], important?: boolean }): { remove: () => boolean, resend: () => void }
+       * @example net.sync.state('match', { get: () => ({ score }), set: (s) => { score = s.score; } });
+       */
       state(name, def) {
         if (!def || typeof def.get !== 'function' || typeof def.set !== 'function') throw new Error('hawkes-net: sync.state(name, { get, set })');
         const key = String(name);
@@ -1062,7 +1360,12 @@ class Room {
         }
         return { remove: () => self.states.delete(key), resend: () => { const s = self.states.get(key); if (s) s.sent = null; } };
       },
-      /** Something that must happen once for everyone, decided by the host. Returns invoke(data). */
+      /**
+       * Registers an authoritative host-decided action (`run(data, { authoritative, from })`) and returns `invoke(data)`.
+       * @method sync.action
+       * @sig sync.action(name: string, run: (data: any, meta: { authoritative: boolean, from: PeerInfo | null }) => void): (data?: any) => void
+       * @example const pickup = net.sync.action('pickup', (d, { authoritative }) => { if (authoritative) award(d.item); });
+       */
       action(name, run) {
         const n = String(name);
         self.actions.set(n, run);
@@ -1071,9 +1374,25 @@ class Room {
           else { run(data, { authoritative: false, from: null }); self.send('_ar', { n, d: data }); }
         };
       },
+      /**
+       * Creates a `Track` snapshot buffer bound to this room's shared clock and per-sender transit `links`.
+       * @method sync.track
+       * @sig sync.track(o?: TrackOptions): Track
+       * @example const track = net.sync.track({ pos: [0, 1, 2], euler: [3, 4, 5], vel: [6, 7, 8] });
+       */
       track: (o) => new core.Track(o, { clock: () => self.now(), links: self.links }),
-      /** values: [x, y, z, rx, ry, rz, vx, vy, vz, spin x, y, z] (a prefix is fine). Unchanged values aren't sent;
-       *  everything goes again every 5 s so nothing drifts. o.important: driven or held (sent first and more often). */
+      /**
+       * Marks a `sync.push` entity or `sync.state` entry as high priority so it sends first and more often at distance.
+       * @option important
+       * @sig important?: boolean
+       * @example net.sync.push('ball', [x, y, z, 0, 0, 0, vx, vy, vz], { important: true });
+       */
+      /**
+       * Pushes up to 12 numbers (`[x, y, z, rx, ry, rz, vx, vy, vz, sx, sy, sz]`) for an entity simulated by this peer (`sync.mine(id)`).
+       * @method sync.push
+       * @sig sync.push(id: string, values: number[], o?: { important?: boolean }): void
+       * @example net.sync.push('crate-3', [x, y, z, rx, ry, rz, vx, vy, vz], { important: true });
+       */
       push(id, values, o = {}) {
         if (!self.sync.mine(id)) return;
         const before = self.pushed.get(id);
@@ -1098,15 +1417,70 @@ class Room {
         for (let i = 0; i < 12; i++) if (mask & (1 << i)) keep[i] = values[i];
         self.q.xf.set(id, { mask: all, vals: keep, entry: [id, all | (o.important ? IMPORTANT : 0), ...vals] });
       },
-      /** fn(id, at, values, from, important): where things others simulate are (the 12 values, newest). */
+      /**
+       * Fires when transform values for a moving entity (`sync.push`) arrive from its simulating peer or host.
+       * @event thing
+       * @sig net.sync.onThing((id: string, at: number, values: number[], from: string, important: boolean, mask: number) => void): () => void
+       * @example net.sync.onThing((id, at, values, from) => tracks.get(id)?.push(at, values, from));
+       */
+      /**
+       * Subscribes `fn(id, at, values, from, important, mask)` to incoming entity transforms; returns `off()`.
+       * @method sync.onThing
+       * @sig sync.onThing(fn: (id: string, at: number, values: number[], from: string, important: boolean, mask: number) => void): () => void
+       * @example const off = net.sync.onThing((id, at, vals, from) => applyThing(id, at, vals, from));
+       */
       onThing: (fn) => self.ev.on('thing', fn),
-      /** The newest values the room has sent of a thing (or null). */
+      /**
+       * Returns a copy of the newest 12 transform values received for entity `id`, or `null` if unknown.
+       * @method sync.thing
+       * @sig sync.thing(id: string): number[] | null
+       * @example const vals = net.sync.thing('crate-3');
+       */
       thing: (id) => self.things.get(id)?.slice() ?? null,
-      /** fn(ops, { by, fx, from }): world edits a server saved. */
+      /**
+       * Fires when authoritative world-edit operations published by a game server (`/v1/net/publish`, `publish_refused` when unauthorized) arrive.
+       * @event ops
+       * @sig net.sync.onOps((ops: any[], meta: { by: string | null, fx: any, from: string | null }) => void): () => void
+       * @example net.sync.onOps((ops) => applyWorldEdits(ops));
+       */
+      /**
+       * Subscribes `fn(ops, { by, fx, from })` to server-saved world operations; returns `off()`.
+       * @method sync.onOps
+       * @sig sync.onOps(fn: (ops: any[], meta: { by: string | null, fx: any, from: string | null }) => void): () => void
+       * @example const off = net.sync.onOps((ops, meta) => rebuildEntities(ops, meta.by));
+       */
       onOps: (fn) => self.ev.on('ops', fn),
-      /** fn(id, owner, held): ownership changes. */
+      /**
+       * Fires when an entity's simulation owner or lock holder changes (`claim`, `hold`, `release`, or peer disconnect).
+       * @event own
+       * @sig net.sync.onOwner((id: string, owner: string | null, held: boolean) => void): () => void
+       * @example net.sync.onOwner((id, owner, held) => updateBadge(id, owner, held));
+       */
+      /**
+       * Subscribes `fn(id, owner, held)` to entity ownership and hold changes; returns `off()`.
+       * @method sync.onOwner
+       * @sig sync.onOwner(fn: (id: string, owner: string | null, held: boolean) => void): () => void
+       * @example const off = net.sync.onOwner((id, owner, held) => console.log(id, owner, held));
+       */
       onOwner: (fn) => self.ev.on('own', fn),
-      /** Take over simulating a thing. o.hold: nobody takes it by bumping into it until release. False if someone holds it. */
+      /**
+       * Locks a claimed entity (`sync.claim(id, { hold: true })`) so another player cannot take ownership by bumping into it until `release`.
+       * @option hold
+       * @sig hold?: boolean
+       * @example net.sync.claim('car-1', { hold: true });
+       */
+      /**
+       * Overrides another peer's client-side lock check when claiming an entity (`sync.claim(id, { force: true })`).
+       * @option force
+       * @sig force?: boolean
+       * @example net.sync.claim('ball', { hold: true, force: true });
+       */
+      /**
+       * Claims simulation ownership of entity `id` (with optional `o.hold` lock); returns `false` if held by another peer.
+       * @method sync.claim
+       * @sig sync.claim(id: string, o?: { hold?: boolean, force?: boolean }): boolean
+       * @example if (net.sync.claim('car-1', { hold: true })) driveCar('car-1');
+       */
       claim(id, o = {}) {
         if (!self._online()) return false;
         const l = self.locks.get(id);
@@ -1118,24 +1492,82 @@ class Room {
         self.q.rel.push({ t: 'own', id, on: true, lock: self.locks.get(id) === self.id ? 1 : 0 });
         return true;
       },
-      /** Hold on (or let go) of a thing I own without giving it up. */
+      /**
+       * Locks or unlocks an entity already owned by this player without releasing simulation ownership.
+       * @method sync.hold
+       * @sig sync.hold(id: string, on?: boolean): void
+       * @example net.sync.hold('crate-3', false);
+       */
       hold(id, on = true) {
         if (!self._online() || self.owners.get(id) !== self.id || (self.locks.get(id) === self.id) === Boolean(on)) return;
         if (on) self.locks.set(id, self.id); else self.locks.delete(id);
         self.q.rel.push({ t: 'own', id, on: true, lock: on ? 1 : 0 });
       },
+      /**
+       * Releases simulation ownership and any hold lock on entity `id` back to the room host.
+       * @method sync.release
+       * @sig sync.release(id: string): void
+       * @example net.sync.release('car-1');
+       */
       release(id) {
         if (!self._online() || self.owners.get(id) !== self.id) return;
         self.owners.delete(id); self.locks.delete(id);
         self.q.rel.push({ t: 'own', id, on: false });
       },
+      /**
+       * Returns true when this player is responsible for simulating entity `id` (either its owner or the host when unowned).
+       * @method sync.mine
+       * @sig sync.mine(id: string): boolean
+       * @example if (net.sync.mine('crate-3')) stepPhysics('crate-3');
+       */
       mine: (id) => { if (!self._online()) return true; const o = self.owners.get(id); return o ? o === self.id : self.isHost; },
+      /**
+       * Returns the peer ID currently holding a lock on entity `id`, or `null` if unlocked.
+       * @method sync.holder
+       * @sig sync.holder(id: string): string | null
+       * @example const driverId = net.sync.holder('car-1');
+       */
       holder: (id) => self.locks.get(id) || null,
+      /**
+       * Returns the peer ID that currently owns entity `id`, or `null` if simulated by the host.
+       * @method sync.owner
+       * @sig sync.owner(id: string): string | null
+       * @example const simPeer = net.sync.owner('crate-3');
+       */
       owner: (id) => self.owners.get(id) || null,
-      /** The host put the world back (a reset, a rewind): the room forgets the poses it kept. */
+      /**
+       * Host-only: clears all stored entity transforms in the room and emits `clear` to every peer (for round resets or rewinds).
+       * @method sync.clear
+       * @sig sync.clear(): void
+       * @example if (net.isHost) net.sync.clear();
+       */
       clear() { if (self._online() && self.isHost) { self.q.rel.push({ t: 'clear' }); self.things.clear(); } },
+      /**
+       * Fires when the host clears all stored entity transforms (`sync.clear()`).
+       * @event clear
+       * @sig net.sync.onClear(fn: () => void): () => void
+       * @example net.sync.onClear(() => tracks.forEach((t) => t.clear()));
+       */
+      /**
+       * Subscribes `fn()` to room-wide transform resets triggered by `sync.clear()`; returns `off()`.
+       * @method sync.onClear
+       * @sig sync.onClear(fn: () => void): () => void
+       * @example const off = net.sync.onClear(() => resetScene());
+       */
       onClear: (fn) => self.ev.on('clear', fn),
+      /**
+       * Subscribes `fn(host, previous)` to host changes on `room.sync`; returns `off()`.
+       * @method sync.onHost
+       * @sig sync.onHost(fn: (host: string, previous: string | null) => void): () => void
+       * @example const off = net.sync.onHost((host) => console.log('host is now', host));
+       */
       onHost(fn) { self.hostHandlers.add(fn); return () => self.hostHandlers.delete(fn); },
+      /**
+       * Returns the room's shared clock in milliseconds (`room.now()`).
+       * @method sync.now
+       * @sig sync.now(): number
+       * @example const t = net.sync.now();
+       */
       now: () => self.now(),
     };
   }
@@ -1196,24 +1628,27 @@ class Room {
 
 // ================================================================ the standard layer: shared rooms by area
 /**
- * The standard way a game puts its players together (docs/net.md "The standard layer"; Unity's HawkesNetLobby is the
- * same): one shared room per area ("lobby", "level-1"), everyone in it, kept joined. It names the room for where the page
- * runs, moves to the next shard when a room is full, joins again by itself when the connection is lost or refused, and
- * gives one status. Its handlers stay subscribed across rejoins and shards, so a game subscribes once.
- *
- *   const lob = lobby({ project: 'mygame', liveHosts: ['mygame.com', 'www.mygame.com'], name: 'Ada' });
- *   lob.on('chat', (text, from) => show(from.name, text));
- *   lob.onPose((peer, state) => moveAvatar(peer, state.p, state.y));
- *   lob.when('status', ({ status }) => hud(status));   // off, connecting, online, reconnecting, offline, full
- *   lob.join('level-1');
- *   lob.send('chat', 'hi'); lob.pose([x, y, z], yaw);  // dropped while not in a room
- *
- * Room names (the project's test prefix "t-" keeps beta and playtests apart from live, free and out of the counts):
- *   live hosts:  "level-1", then "level-1.2", "level-1.3"... when full
- *   elsewhere:   "t-level-1"                   (beta sites, localhost)
- *   playtest:    "t-<id>/level-1"              (?room=<id> on the page: Gen's playtest.run with peers)
- * o: join's options (project or ticket, name, transport...) plus liveHosts (the game's own host names), prefix (before
- * every area: "p1/" for a protocol version), maxShards (20), url (the page's address, for names: default location.href).
+ * Hostnames that count as the game's live production site in `lobby({ liveHosts })` (other hosts prefix room names with `t-`).
+ * @option liveHosts
+ * @sig liveHosts?: string[]
+ * @example const lob = lobby({ project: 'mygame', liveHosts: ['mygame.com', 'www.mygame.com'] });
+ */
+/**
+ * Prefix prepended to every area name in `lobby({ prefix })` (e.g. `'v2/'` to separate incompatible game builds).
+ * @option prefix
+ * @sig prefix?: string
+ * @example const lob = lobby({ project: 'mygame', prefix: 'v2/' });
+ */
+/**
+ * Maximum automatic shard number tried by `lobby` when an area room closes with `players_limit` / code `4009` (default `20`).
+ * @option maxShards
+ * @sig maxShards?: number
+ * @example const lob = lobby({ project: 'mygame', maxShards: 10 });
+ */
+/**
+ * Creates a `Lobby` that manages one shared room per area (`"lobby"`, `"level-1"`), sharding when full and reconnecting with persistent handlers.
+ * @sig lobby(o?: LobbyOptions): Lobby
+ * @example const lob = lobby({ project: 'mygame', liveHosts: ['mygame.com'], name: 'Ada' }); lob.join('level-1');
  */
 export function lobby(o = {}) { return new Lobby(o); }
 
@@ -1228,19 +1663,83 @@ class Lobby {
     this.area = ''; this.shard = 1; this.roomName = ''; this.status = 'off'; this.lastProblem = ''; this.room = null;
     this._explicit = false; this._backoff = 0; this._retry = null; this._gen = 0; this._off = [];
   }
+  /**
+   * True when the lobby has an active room in `'online'` status.
+   * @method lobby.ready
+   * @sig lobby.ready: boolean
+   * @example if (lob.ready) lob.send('ping', 1);
+   */
   get ready() { return Boolean(this.room && this.room.status === 'online'); }
+  /**
+   * Map of other peers (`Map<string, PeerInfo>`) in the current room, or an empty `Map` while offline.
+   * @method lobby.peers
+   * @sig lobby.peers: Map<string, PeerInfo>
+   * @example console.log('players here:', lob.peers.size);
+   */
   get peers() { return this.room ? this.room.peers : new Map(); }
+  /**
+   * Peer ID of the current room's host, or `null` while not in a room.
+   * @method lobby.host
+   * @sig lobby.host: string | null
+   * @example if (lob.host === lob.id) runSpawner();
+   */
   get host() { return this.room ? this.room.host : null; }
+  /**
+   * This player's peer ID in the current room, or `null` while not in a room.
+   * @method lobby.id
+   * @sig lobby.id: string | null
+   * @example console.log('my peer id:', lob.id);
+   */
   get id() { return this.room ? this.room.id : null; }
+  /**
+   * Returns the current room's shared clock in milliseconds, or `Date.now()` while offline.
+   * @method lobby.now
+   * @sig lobby.now(): number
+   * @example const t = lob.now();
+   */
   now() { return this.room ? this.room.now() : Date.now(); }
 
-  /** The page's address, host and query (empty in Node unless `url` was given). */
+  /**
+   * The page URL used to determine `pageHost`, `isLive`, and `?room=` playtest isolation.
+   * @method lobby.url
+   * @sig lobby.url: string
+   * @example console.log(lob.url);
+   */
   get url() { return this.o.url ?? (typeof location !== 'undefined' ? location.href : ''); }
+  /**
+   * Lowercase hostname parsed from `lobby.url` (empty string in Node unless `url` option was provided).
+   * @method lobby.pageHost
+   * @sig lobby.pageHost: string
+   * @example console.log(lob.pageHost);
+   */
   get pageHost() { try { return new URL(this.url).hostname.toLowerCase(); } catch { return ''; } }
+  /**
+   * Reads query parameter `name` from `lobby.url` (or `''` if absent).
+   * @method lobby.query
+   * @sig lobby.query(name: string): string
+   * @example const roomParam = lob.query('room');
+   */
   query(name) { try { return new URL(this.url).searchParams.get(name) ?? ''; } catch { return ''; } }
+  /**
+   * True when `lobby.pageHost` matches one of the hostnames in `liveHosts`.
+   * @method lobby.isLive
+   * @sig lobby.isLive: boolean
+   * @example if (!lob.isLive) showBetaBanner();
+   */
   get isLive() { return this.o.liveHosts.includes(this.pageHost); }
+  /**
+   * The sanitized `?room=<id>` playtest room token from `lobby.url` (`''` when none).
+   * @method lobby.testRoom
+   * @sig lobby.testRoom: string
+   * @example console.log(lob.testRoom);
+   */
   get testRoom() { const id = this.query('room'); return TEST_ROOM.test(id) ? id : ''; }
-  /** The full room name for an area and shard here (see above). */
+  /**
+   * Computes the full room name for `area` and `shard` (`"level-1"`, `"t-level-1"`, or `"t-<id>/level-1"`).
+   * @method lobby.nameFor
+   * @sig lobby.nameFor(area: string, shard?: number): string
+   * @example const name = lob.nameFor('level-1', 2);
+   */
   nameFor(area, shard = 1) {
     const name = `${this.o.prefix}${area}${shard > 1 ? `.${shard}` : ''}`;
     const test = this.testRoom;
@@ -1248,8 +1747,12 @@ class Lobby {
     return this.isLive ? name : `t-${name}`;
   }
 
-  /** Joins an area's shared room (the first shard with room, or this shard). The area you are in does nothing; another
-   *  one leaves this first. */
+  /**
+   * Joins the shared room for `area` (switching areas if already in a different one, or advancing shards when full).
+   * @method lobby.join
+   * @sig lobby.join(area: string, shard?: number): void
+   * @example lob.join('level-1');
+   */
   join(area, shard = 0) {
     if (!area) return this.leave();
     if (area === this.area && (!shard || shard === this.shard) && (this.room || this.status === 'connecting')) return;
@@ -1260,23 +1763,78 @@ class Lobby {
     this._backoff = 0;
     void this._open();
   }
-  /** Leaves and stays out (no rejoining) until the next join. */
+  /**
+   * Leaves the current area room and stops automatic rejoining until `lobby.join(area)` is called again.
+   * @method lobby.leave
+   * @sig lobby.leave(): void
+   * @example lob.leave();
+   */
   leave() {
     this.area = '';
     this._close();
     this._setStatus('off');
   }
 
-  // The current room's, while in one (dropped otherwise, as a game's per-frame sends should be).
+  /**
+   * Sends a message of `kind` to the lobby's active room (silently dropped while not `ready`).
+   * @method lobby.send
+   * @sig lobby.send(kind: string, data?: any, opt?: SendOptions): void
+   * @example lob.send('chat', 'hello');
+   */
   send(kind, data, opt) { if (this.ready) this.room.send(kind, data, opt); }
+  /**
+   * Sends an immediate `express` byte frame to the lobby's active room; returns `false` while not `ready`.
+   * @method lobby.express
+   * @sig lobby.express(bytes: Uint8Array | ArrayBufferView | ArrayBuffer, opt?: { to?: string }): boolean
+   * @example lob.express(new Uint8Array([1, 2, 3]));
+   */
   express(bytes, opt) { return this.ready ? this.room.express(bytes, opt) : false; }
+  /**
+   * Subscribes `fn(bytes, from)` to incoming `express` frames across all rooms this lobby joins; returns `off()`.
+   * @method lobby.onExpress
+   * @sig lobby.onExpress(fn: (bytes: Uint8Array, from: string) => void): () => void
+   * @example const off = lob.onExpress((bytes, from) => onInput(from, bytes));
+   */
   onExpress(fn) { return this.ev.on('express', fn); }
+  /**
+   * Queues this player's avatar pose in the lobby's active room (silently dropped while not `ready`).
+   * @method lobby.pose
+   * @sig lobby.pose(p: [number, number, number], yaw?: number, extra?: Record<string, any> | null): void
+   * @example lob.pose([x, y, z], yaw);
+   */
   pose(p, yaw, extra) { if (this.ready) this.room.pose(p, yaw, extra); }
-  /** fn(data, from, meta) for messages of a kind ('*' for all), from whichever room the lobby is in. Returns off(). */
+  /**
+   * Subscribes `fn(data, from, meta)` to messages of `kind` (`'*'` for all) across rejoins and shard moves; returns `off()`.
+   * @method lobby.on
+   * @sig lobby.on(kind: string, fn: (data: any, from: PeerInfo | null, meta: { at: number, reliable: boolean, kind: string }) => void): () => void
+   * @example lob.on('chat', (text, from) => showChat(from?.name, text));
+   */
   on(kind, fn) { return this.msgs.on(kind, fn); }
-  /** fn(peerId, state, at) for other players' avatars. Returns off(). */
+  /**
+   * Subscribes `fn(peerId, state, at)` to other players' avatar poses across rejoins and shard moves; returns `off()`.
+   * @method lobby.onPose
+   * @sig lobby.onPose(fn: (peerId: string, state: { p: [number, number, number], y: number, [k: string]: any }, at: number) => void): () => void
+   * @example lob.onPose((peer, state) => moveAvatar(peer, state.p, state.y));
+   */
   onPose(fn) { return this.ev.on('pose', fn); }
-  /** status ({ status }), joined (room), left (room), peer:join, peer:leave, peer:away, away, host, transport, problem. Returns off(). */
+  /**
+   * Fires when a `Lobby` finishes joining a shard's `Room` instance.
+   * @event joined
+   * @sig lob.when('joined', (room: Room) => void): () => void
+   * @example lob.when('joined', (room) => console.log('in shard', room.room));
+   */
+  /**
+   * Fires when a `Lobby` closes or leaves its current `Room` instance.
+   * @event left
+   * @sig lob.when('left', (room: Room) => void): () => void
+   * @example lob.when('left', (room) => console.log('left', room.room));
+   */
+  /**
+   * Subscribes `fn` to lobby and room lifecycle events (`status`, `joined`, `left`, `peer:join`, `peer:leave`, `peer:away`, `away`, `host`, `transport`, `problem`); returns `off()`.
+   * @method lobby.when
+   * @sig lobby.when(event: string, fn: (payload: any) => void): () => void
+   * @example lob.when('status', ({ status }) => updateHud(status));
+   */
   when(event, fn) { return this.ev.on(event, fn); }
 
   async _open() {
@@ -1352,4 +1910,9 @@ class Lobby {
   }
 }
 
+/**
+ * Default module export bundling `{ join, lobby, background, inBackground, VERSION, protocols, Track, Links }`.
+ * @sig export default { join, lobby, background, inBackground, VERSION, protocols, Track, Links }
+ * @example import hawkesNet from '@hawkesgen/net'; const net = await hawkesNet.join('lobby', { project: 'mygame' });
+ */
 export default { join, lobby, background, inBackground, VERSION, protocols, Track, Links };
