@@ -240,6 +240,43 @@ test('orb game: after p2p→relay, a peer that wires late still gets orbs and co
   }
 });
 
+test('orb game: both wired, collect then immediate p2p→relay keeps matching orbs and scores', async () => {
+  // Smoke wires before migrate; a collect (action) can race the last `_s` into the p2p room — seed must not leave peers mismatched.
+  const hub = await startTestHub();
+  const cfg = { config: { p2pMax: 8, maxPlayers: 64 } };
+  const opts = (name: string, sub: string) => ({
+    project: 'netdemo', endpoint: hub.url, transport: 'auto' as const, name, log: false, leaveOnHide: false, sub, ...cfg,
+  });
+  const a = await join('orbs-wired', opts('Host', 'aw'));
+  const b = await join('orbs-wired', opts('Guest', 'bw'));
+  try {
+    await wait(() => a.peers.has(b.id) && b.peers.has(a.id), 5000, 'peers');
+    assert.equal(a.transport, 'p2p');
+    const wa = wire(a), wb = wire(b);
+    await wait(() => wa.game.orbs.length === ORB_N && wb.game.orbs.length === ORB_N, 8000, 'both orbs on p2p');
+    await new Promise((r) => setTimeout(r, 300)); // one `_s` into the p2p room
+    const target = { ...wa.game.orbs[0] };
+    const before = wa.game.scores[b.id] || 0;
+    wb.touch({ orb: target.id, gen: target.gen, by: b.id });
+    await wait(() => (wa.game.scores[b.id] || 0) > before && (wb.game.scores[b.id] || 0) > before, 3000, 'score before migrate');
+    a.migrate('game asked'); // immediate: seed must include the post-collect orbs/scores
+    await wait(() => a.transport === 'relay' && b.transport === 'relay', 10000, 'relay');
+    const key = (o: any) => `${o.id}:${o.x}:${o.y}:${o.gen}`;
+    await wait(() => {
+      if (wa.game.orbs.length !== ORB_N || wb.game.orbs.length !== ORB_N) return false;
+      if (wa.game.orbs.map(key).sort().join('|') !== wb.game.orbs.map(key).sort().join('|')) return false;
+      return (wa.game.scores[b.id] || 0) === (wb.game.scores[b.id] || 0) && (wa.game.scores[b.id] || 0) > before;
+    }, 8000, 'same orbs and scores after migrate');
+    const again = { ...wa.game.orbs[0] };
+    const scoreWas = wa.game.scores[b.id] || 0;
+    wb.touch({ orb: again.id, gen: again.gen, by: b.id });
+    await wait(() => (wa.game.scores[b.id] || 0) > scoreWas && (wb.game.scores[b.id] || 0) > scoreWas, 3000, 'collect still syncs on relay');
+  } finally {
+    await b.leave(); await a.leave();
+    await hub.stop();
+  }
+});
+
 test('orb rounds: host leave mid-round keeps endsAt and scores for the new host', async () => {
   const hub = await startTestHub();
   const opts = (name: string, sub: string) => ({

@@ -477,8 +477,10 @@ class Room {
     if (this.transport === 'relay') this._syncPeers(h.peers || []);
     else for (const pr of h.peers || []) this._addPeer(pr);
     // The room has nothing of mine on a new stream: my things and states go again.
+    // Clear st.t too so a migrate hello's immediate `_syncStates` is not rate-limited by the last p2p push
+    // (seed can lag action updates; the host must re-push now, not on the next 1 s upkeep tick).
     this.pushed.clear();
-    for (const st of this.states.values()) st.sent = null;
+    for (const st of this.states.values()) { st.sent = null; st.t = 0; }
     if (prevHost !== this.host) this._hostChanged(this.host, prevHost, prevHost ? 'host left' : 'first');
   }
   _syncPeers(list) {
@@ -528,7 +530,14 @@ class Room {
       case 'sig': return void this._sig(m);
       case 'migrate':
         // The node asks the host for its copy of the world: the relay takes over from it.
-        if (m.step === 'seed' && this.p2p?.hostRoom) this._control({ c: 'seed', epoch: m.epoch, snap: core.snapshot(this.p2p.hostRoom) });
+        if (m.step === 'seed' && this.p2p?.hostRoom) {
+          // Actions can change game state without a recent `_s`; flush live sync.state into the p2p room
+          // so the relay seed matches what peers already applied over the link (not a stale copy).
+          for (const st of this.states.values()) { st.sent = null; st.t = 0; }
+          this._syncStates();
+          this._flush();
+          this._control({ c: 'seed', epoch: m.epoch, snap: core.snapshot(this.p2p.hostRoom) });
+        }
         return;
       case 'server':
         // A server's world edit or event in a p2p room: the host applies it to its room, which forwards it to everyone.
@@ -633,7 +642,7 @@ class Room {
   }
   _hostChanged(host, previous, reason) {
     if (host === previous) return;
-    if (host === this.id) for (const st of this.states.values()) st.sent = null; // the new host sends its states
+    if (host === this.id) for (const st of this.states.values()) { st.sent = null; st.t = 0; } // the new host sends its states now
     this.ev.emit('host', { host, previous, reason });
     if (this._wasReady) this._raw({ t: 'host', c: host });
     for (const f of this.hostHandlers) { try { f(host, previous); } catch (e) { console.error('[hawkes-net] onHost:', e); } }
