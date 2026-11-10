@@ -16,10 +16,24 @@
 // ones less often) in priority order within a byte budget, delta-encoded against what that connection already has;
 // synced states (only the keys that changed since that connection last got them).
 
+/**
+ * Current binary wire protocol version (`3`), negotiated on the WebSocket subprotocol (`hawkes-net.v3`).
+ * @sig const PROTOCOL: 3
+ * @example import { PROTOCOL } from '@hawkesgen/net/core'; console.log(PROTOCOL);
+ */
 export const PROTOCOL = 3;
+/**
+ * Core and SDK version string (`'1.4.5'`), kept in lockstep across `package.json`, `sdk/js/package.json`, and the core.
+ * @sig const VERSION: string
+ * @example import { VERSION } from '@hawkesgen/net/core'; console.log(VERSION);
+ */
 export const VERSION = '1.4.5';
 
-/** Room defaults; a room's config and its ticket's limits narrow them. */
+/**
+ * Default per-room and per-connection caps (`playersPerRoom`, `downBytesPerSec`, `upBytesPerSec`, `msgsPerSec`, `innerPerSec`, `messageBytes`, `ents`, `states`).
+ * @sig const DEFAULT_LIMITS: { playersPerRoom: number, downBytesPerSec: number, upBytesPerSec: number, msgsPerSec: number, innerPerSec: number, messageBytes: number, ents: number, states: number }
+ * @example const limits = { ...DEFAULT_LIMITS, playersPerRoom: 16 };
+ */
 export const DEFAULT_LIMITS = {
   playersPerRoom: 64,
   downBytesPerSec: 48 * 1024,
@@ -30,8 +44,23 @@ export const DEFAULT_LIMITS = {
   ents: 4096,
   states: 2048,
 };
+/**
+ * Default distance-based interest management tiers (`[maxDistanceM, normalWaitMs, importantWaitMs]`) and `farAvatarM` threshold (`120`).
+ * @sig const DEFAULT_INTEREST: { tiers: [number | null, number, number][], farAvatarM: number }
+ * @example const room = newRoom({ interest: DEFAULT_INTEREST });
+ */
 export const DEFAULT_INTEREST = { tiers: [[45, 0, 0], [130, 250, 0], [320, 1000, 250], [null, 3000, 1000]], farAvatarM: 120 };
+/**
+ * Default quantization step sizes (`posStep`, `velStep`, `spinStep`) and full-baseline `keyframeMs` (`2500`).
+ * @sig const DEFAULT_QUANT: { posStep: number, velStep: number, spinStep: number, keyframeMs: number }
+ * @example const codec = new Codec({ quant: DEFAULT_QUANT });
+ */
 export const DEFAULT_QUANT = { posStep: 1 / 128, velStep: 0.05, spinStep: 0.1, keyframeMs: 2500 };
+/**
+ * Interval in milliseconds (`33` ms, ~30 Hz) between room bundle flushes.
+ * @sig const FLUSH_MS: number
+ * @example setInterval(() => flush(room, Date.now()), FLUSH_MS);
+ */
 export const FLUSH_MS = 33;
 
 const VALUES = 12;
@@ -44,7 +73,11 @@ const stamp = (v, now) => (typeof v === 'number' && v > now - 600_000 && v < now
 const te = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
 const td = typeof TextDecoder !== 'undefined' ? new TextDecoder() : null;
 
-/** A growable byte buffer with LEB128 varints and zig-zag signed varints (safe up to 2^53). */
+/**
+ * Growable binary byte buffer supporting unsigned LEB128 varints (`uv`), zig-zag signed varints (`sv`), floats, and UTF-8 strings.
+ * @sig class Writer
+ * @example const w = new Writer(); w.uv(42); w.str('hi'); const u8 = w.done();
+ */
 export class Writer {
   constructor(size = 512) { this.b = new Uint8Array(size); this.n = 0; }
   need(k) {
@@ -55,8 +88,26 @@ export class Writer {
     nb.set(this.b.subarray(0, this.n));
     this.b = nb;
   }
+  /**
+   * Appends one unsigned byte (`v & 255`) to the buffer.
+   * @method writer.u8
+   * @sig writer.u8(v: number): void
+   * @example w.u8(FRAME.bundle);
+   */
   u8(v) { this.need(1); this.b[this.n++] = v & 255; }
+  /**
+   * Appends a little-endian 16-bit unsigned integer to the buffer.
+   * @method writer.u16
+   * @sig writer.u16(v: number): void
+   * @example w.u16(1024);
+   */
   u16(v) { this.need(2); this.b[this.n++] = v & 255; this.b[this.n++] = (v >>> 8) & 255; }
+  /**
+   * Appends an unsigned LEB128 varint (clamped to `[0, 2^53 - 1]`) to the buffer.
+   * @method writer.uv
+   * @sig writer.uv(v: number): void
+   * @example w.uv(300);
+   */
   uv(v) {
     this.need(8);
     // Total: any number writes at most 8 bytes (NaN and negatives as 0, Infinity and anything past 2^53 as 2^53 - 1),
@@ -65,28 +116,129 @@ export class Writer {
     while (v >= 128) { this.b[this.n++] = (v % 128) | 128; v = Math.floor(v / 128); }
     this.b[this.n++] = v;
   }
+  /**
+   * Appends a zig-zag encoded signed varint to the buffer.
+   * @method writer.sv
+   * @sig writer.sv(v: number): void
+   * @example w.sv(-15);
+   */
   sv(v) { v = Math.round(v); if (!(v >= -4503599627370495 && v <= 4503599627370495)) v = v > 0 ? 4503599627370495 : v < 0 ? -4503599627370495 : 0; this.uv(v >= 0 ? v * 2 : -v * 2 - 1); }
+  /**
+   * Appends a little-endian 64-bit IEEE-754 float to the buffer.
+   * @method writer.f64
+   * @sig writer.f64(v: number): void
+   * @example w.f64(Math.PI);
+   */
   f64(v) { this.need(8); new DataView(this.b.buffer, this.b.byteOffset + this.n, 8).setFloat64(0, v, true); this.n += 8; }
+  /**
+   * Appends a length-prefixed `Uint8Array` slice to the buffer.
+   * @method writer.bytes
+   * @sig writer.bytes(u8: Uint8Array): void
+   * @example w.bytes(new Uint8Array([1, 2, 3]));
+   */
   bytes(u8) { this.uv(u8.length); this.raw(u8); }
+  /**
+   * Appends raw bytes from `u8` without a length prefix.
+   * @method writer.raw
+   * @sig writer.raw(u8: Uint8Array): void
+   * @example w.raw(payloadBytes);
+   */
   raw(u8) { this.need(u8.length); this.b.set(u8, this.n); this.n += u8.length; }
+  /**
+   * Appends a length-prefixed UTF-8 string to the buffer.
+   * @method writer.str
+   * @sig writer.str(s: string): void
+   * @example w.str('crate-3');
+   */
   str(s) { const e = te.encode(s); this.uv(e.length); this.raw(e); }
+  /**
+   * Returns a new `Uint8Array` containing the bytes written so far.
+   * @method writer.done
+   * @sig writer.done(): Uint8Array
+   * @example const packet = w.done();
+   */
   done() { return this.b.slice(0, this.n); }
+  /**
+   * Resets the write offset to `0` for buffer reuse and returns `this`.
+   * @method writer.reset
+   * @sig writer.reset(): Writer
+   * @example w.reset().u8(0);
+   */
   reset() { this.n = 0; return this; }
 }
+/**
+ * Bounds-checked binary cursor that reads varints, floats, byte slices, and UTF-8 strings from a `Uint8Array`.
+ * @sig class Reader
+ * @example const r = new Reader(u8); const n = r.uv(); const s = r.str();
+ */
 export class Reader {
   constructor(u8) { this.b = u8; this.i = 0; }
+  /**
+   * Number of unread bytes remaining in the buffer.
+   * @method reader.left
+   * @sig reader.left: number
+   * @example while (r.left > 0) items.push(r.u8());
+   */
   get left() { return this.b.length - this.i; }
+  /**
+   * Reads one unsigned byte or throws `RangeError` if past the end of the frame.
+   * @method reader.u8
+   * @sig reader.u8(): number
+   * @example const tag = r.u8();
+   */
   u8() { if (this.i >= this.b.length) throw new RangeError('hawkes-net: short frame'); return this.b[this.i++]; }
+  /**
+   * Reads a little-endian 16-bit unsigned integer.
+   * @method reader.u16
+   * @sig reader.u16(): number
+   * @example const turn = r.u16();
+   */
   u16() { return this.u8() | (this.u8() << 8); }
+  /**
+   * Reads an unsigned LEB128 varint (throws `RangeError` if malformed).
+   * @method reader.uv
+   * @sig reader.uv(): number
+   * @example const len = r.uv();
+   */
   uv() {
     let v = 0, m = 1, x;
     do { x = this.u8(); v += (x & 127) * m; m *= 128; if (m > 2 ** 56) throw new RangeError('hawkes-net: varint too long'); } while (x & 128);
     return v;
   }
+  /**
+   * Reads a zig-zag encoded signed varint.
+   * @method reader.sv
+   * @sig reader.sv(): number
+   * @example const delta = r.sv();
+   */
   sv() { const u = this.uv(); return u % 2 ? -(u + 1) / 2 : u / 2; }
+  /**
+   * Reads a little-endian 64-bit IEEE-754 float.
+   * @method reader.f64
+   * @sig reader.f64(): number
+   * @example const val = r.f64();
+   */
   f64() { if (this.i + 8 > this.b.length) throw new RangeError('hawkes-net: short frame'); const v = new DataView(this.b.buffer, this.b.byteOffset + this.i, 8).getFloat64(0, true); this.i += 8; return v; }
+  /**
+   * Reads a zero-copy `Uint8Array` view of `k` bytes from the buffer.
+   * @method reader.raw
+   * @sig reader.raw(k: number): Uint8Array
+   * @example const slice = r.raw(len);
+   */
   raw(k) { if (this.i + k > this.b.length) throw new RangeError('hawkes-net: short frame'); const s = this.b.subarray(this.i, this.i + k); this.i += k; return s; }
+  /**
+   * Reads a length-prefixed `Uint8Array` copy from the buffer.
+   * @method reader.bytes
+   * @sig reader.bytes(): Uint8Array
+   * @example const data = r.bytes();
+   */
   bytes() { return this.raw(this.uv()).slice(); }
+  /**
+   * Reads a length-prefixed UTF-8 string from the buffer.
+   * @method reader.str
+   * @sig reader.str(): string
+   * @example const id = r.str();
+   */
   str() { return td.decode(this.raw(this.uv())); }
 }
 
@@ -100,10 +252,20 @@ const DICT_CAP = 8192;
 const DICT_LONG = 256, DICT_CHARS = 262_144;
 const STATE_KEYS = 512;
 const BASE_CAP = 8192;
+/**
+ * Per-stream string table that sends each short string once (`uv(0)` + UTF-8) and thereafter as its 1-based varint index.
+ * @sig class Dict
+ * @example const d = new Dict(); d.put(w, 'crate-1');
+ */
 export class Dict {
   constructor() { this.map = new Map(); this.list = []; this.byKey = []; this.chars = 0; }
   room(s) { if (this.list.length >= DICT_CAP || s.length > DICT_LONG || this.chars + s.length > DICT_CHARS) return false; this.chars += s.length; return true; }
-  /** put(), with a number the caller already has for the string (a room's key): no string hashing on the hot path. */
+  /**
+   * Writes string `s` to `w` using pre-assigned integer room key `k` to avoid string hashing on the hot path.
+   * @method dict.putK
+   * @sig dict.putK(w: Writer, s: string, k: number): void
+   * @example d.putK(w, 'crate-1', 0);
+   */
   putK(w, s, k) {
     let i = this.byKey[k];
     if (i === undefined) { i = this.map.get(s); if (i !== undefined) this.byKey[k] = i; }
@@ -111,12 +273,24 @@ export class Dict {
     w.uv(0); w.str(s);
     if (this.room(s)) { const n = this.list.length; this.map.set(s, n); this.list.push(s); this.byKey[k] = n; }
   }
+  /**
+   * Writes string `s` to `w` as a dictionary reference or new entry definition.
+   * @method dict.put
+   * @sig dict.put(w: Writer, s: string): void
+   * @example d.put(w, 'chat');
+   */
   put(w, s) {
     const i = this.map.get(s);
     if (i !== undefined) return w.uv(i + 1);
     w.uv(0); w.str(s);
     if (this.room(s)) { this.map.set(s, this.list.length); this.list.push(s); }
   }
+  /**
+   * Reads a dictionary-encoded string from `r` and records new entries in lockstep with the sender.
+   * @method dict.get
+   * @sig dict.get(r: Reader): string
+   * @example const str = d.get(r);
+   */
   get(r) {
     const v = r.uv();
     if (v) { const s = this.list[v - 1]; if (s === undefined) throw new RangeError('hawkes-net: unknown dictionary entry'); return s; }
@@ -132,6 +306,11 @@ const getStr = (r, d) => { if (d) return d.get(r); const v = r.uv(); if (v) thro
 // ===================================================================== tagged values (state keys, event data)
 // null 0, false 1, true 2, integer 3 (zig-zag), float 4 (f64), string 5, array 6, map 7 (keys through the dictionary),
 // bytes 8, hundredths 9 (a number with two decimals, the portal's r2), thousandths 10 (r3).
+/**
+ * Encodes any JSON-like value or `Uint8Array` `v` into `w` using compact type tags and optional dictionary `d`.
+ * @sig putValue(w: Writer, d: Dict | null, v: any, depth?: number): void
+ * @example putValue(w, dict, { score: 10, pos: [1.25, 0, -3.5] });
+ */
 export function putValue(w, d, v, depth = 0) {
   // Never throws (it runs inside a flush, where a throw would leave this stream's dictionary and baselines ahead of
   // what was sent): past 32 levels a value is sent as null. Received values are checked for depth before this.
@@ -160,6 +339,11 @@ export function putValue(w, d, v, depth = 0) {
   }
   w.u8(0);
 }
+/**
+ * Decodes a tagged value written by `putValue` from `r` using optional dictionary `d`.
+ * @sig getValue(r: Reader, d: Dict | null, depth?: number): any
+ * @example const val = getValue(r, dict);
+ */
 export function getValue(r, d, depth = 0) {
   if (depth > 32) throw new RangeError('hawkes-net: value nested too deep');
   switch (r.u8()) {
@@ -179,10 +363,17 @@ export function getValue(r, d, depth = 0) {
 }
 
 // ===================================================================== protocol 3 frames
-// Byte 0 of every frame: the kind. 0 = a bundle (binary items, below), 1 = hello (JSON), 2 = control (JSON: pings,
-// signalling, migration; things that are rare and need no codec).
+/**
+ * Leading byte of every protocol-3 wire frame (`bundle: 0`, `hello: 1`, `control: 2`, `express: 3`).
+ * @sig const FRAME: { bundle: 0, hello: 1, control: 2, express: 3 }
+ * @example if (u8[0] === FRAME.express) handleExpress(u8);
+ */
 export const FRAME = { bundle: 0, hello: 1, control: 2, express: 3 };
-// Bundle items: a one-byte tag, the payload's length, the payload (so an older page skips a tag it doesn't know).
+/**
+ * Bundle item type tags (`me`, `xf`, `st`, `ev`, `own`, `join`, `leave`, `host`, `ops`, `clear`, `pong`, `ping`, `away`); unknown tags are skipped by length.
+ * @sig const TAG: Record<string, number>
+ * @example console.log(TAG.me, TAG.xf, TAG.ev);
+ */
 export const TAG = { me: 1, xf: 2, st: 3, ev: 4, own: 5, join: 6, leave: 7, host: 8, ops: 9, clear: 10, pong: 11, ping: 13, away: 14 };
 
 const TURN = 65536;
@@ -203,9 +394,9 @@ function dq(i, n, Q) {
 const wrapTurn = (d) => { d %= TURN; if (d > TURN / 2) d -= TURN; if (d < -TURN / 2) d += TURN; return d; };
 
 /**
- * One direction of one protocol-3 stream: its dictionary and the baselines that deltas are taken against. `reliable`
- * streams (a WebSocket, a reliable data channel) carry deltas and dictionary references; others (an unordered,
- * no-retransmit data channel) carry every value whole.
+ * Protocol-3 binary bundle encoder and decoder maintaining one direction's string `Dict` and quantized entity baselines.
+ * @sig class Codec
+ * @example const codec = new Codec(); const frame = codec.bundle([{ t: 'me', s: { p: [0, 0, 0], y: 0 }, at: 100 }], 100, true);
  */
 export class Codec {
   constructor(o = {}) {
@@ -219,12 +410,21 @@ export class Codec {
     this.w = new Writer(2048);
     this.s = new Writer(256);
   }
-  /** Forget every baseline (a 'clear': the other end forgot too). */
+  /**
+   * Clears all quantized entity baselines when a `'clear'` item resets the room's stored transforms.
+   * @method codec.forget
+   * @sig codec.forget(): void
+   * @example codec.forget();
+   */
   forget() { this.base.clear(); this.baseK = []; this.nBase = 0; }
 
   // ------------------------------------------------------------ encoding
-  /** Encodes a list of core messages (the protocol 2 shapes) as one bundle frame. `toServer`: a page's own messages
-   *  (no sender ids: the server knows who it is). Returns the frame (Uint8Array). */
+  /**
+   * Encodes an array of core messages into a single binary `FRAME.bundle` `Uint8Array`.
+   * @method codec.bundle
+   * @sig codec.bundle(msgs: Record<string, any>[], now: number, toServer?: boolean): Uint8Array
+   * @example const bytes = codec.bundle([{ t: 'ev', name: 'chat', data: 'hi' }], Date.now(), true);
+   */
   bundle(msgs, now, toServer = false) {
     const w = this.w.reset();
     w.u8(FRAME.bundle);
@@ -350,7 +550,12 @@ export class Codec {
   }
 
   // ------------------------------------------------------------ decoding
-  /** Decodes a bundle frame into core messages. `fromServer`: messages carry their sender. Throws on a bad frame. */
+  /**
+   * Decodes a binary `FRAME.bundle` `Uint8Array` into `{ now, msgs }` (with sender IDs when `fromServer` is true).
+   * @method codec.read
+   * @sig codec.read(u8: Uint8Array, fromServer?: boolean): { now: number, msgs: Record<string, any>[] }
+   * @example const { now, msgs } = codec.read(frameBytes, true);
+   */
   read(u8, fromServer = false) {
     const r = new Reader(u8);
     if (r.u8() !== FRAME.bundle) throw new RangeError('hawkes-net: not a bundle');
@@ -467,10 +672,23 @@ export class Codec {
 // never resent; between peers it rides an unordered, no-retransmit data channel. The game's bytes go as they are: a
 // payload carries its own frame numbers, so loss and reordering are the game's to handle (rollback netcode does).
 //   [3][flags: 1 from, 2 to][from: uv length + utf8][to: uv length + utf8][the game's bytes]
+/**
+ * Maximum payload size in bytes (`1200`) allowed in a single `express` frame.
+ * @sig const EXPRESS_MAX: 1200
+ * @example if (bytes.length <= EXPRESS_MAX) net.express(bytes);
+ */
 export const EXPRESS_MAX = 1200;
-/** Express frames a second from one connection (unless the room's limits say otherwise). */
+/**
+ * Default rate limit of `express` frames per second (`240`) accepted from a single connection.
+ * @sig const EXPRESS_PER_SEC: 240
+ * @example console.log(EXPRESS_PER_SEC);
+ */
 export const EXPRESS_PER_SEC = 240;
-/** An express frame: from a page (`to`: one peer) or from the room (`from`: who sent it). */
+/**
+ * Packs a raw `payload` (`Uint8Array`) with optional `from` / `to` peer routing into a `FRAME.express` wire frame.
+ * @sig expressFrame(payload: Uint8Array, o?: { from?: string, to?: string }): Uint8Array
+ * @example const frame = expressFrame(new Uint8Array([1, 2]), { to: 'p2' });
+ */
 export function expressFrame(payload, o = {}) {
   const bytes = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
   const from = o.from ? te.encode(String(o.from)) : null;
@@ -483,7 +701,11 @@ export function expressFrame(payload, o = {}) {
   w.raw(bytes);
   return w.done();
 }
-/** Reads an express frame: { from, to, payload } (payload a view into the frame), or null. */
+/**
+ * Parses a `FRAME.express` wire frame into `{ from, to, payload }`, or returns `null` if malformed.
+ * @sig readExpress(u8: Uint8Array): { from: string | null, to: string | null, payload: Uint8Array } | null
+ * @example const parsed = readExpress(u8); if (parsed) handle(parsed.payload, parsed.from);
+ */
 export function readExpress(u8) {
   try {
     const r = new Reader(u8);
@@ -512,7 +734,11 @@ function express(room, c, frame, now) {
   for (const t of room.conns.values()) if (t !== c) send(t);
 }
 
-/** A JSON frame (hello or control): byte 0 the kind, then UTF-8 JSON. */
+/**
+ * Encodes `obj` as a UTF-8 JSON wire frame prefixed with byte `kind` (`FRAME.hello` or `FRAME.control`).
+ * @sig jsonFrame(kind: number, obj: any): Uint8Array
+ * @example const frame = jsonFrame(FRAME.control, { c: 'ping', at: Date.now() });
+ */
 export function jsonFrame(kind, obj) {
   const body = te.encode(JSON.stringify(obj));
   const out = new Uint8Array(body.length + 1);
@@ -520,7 +746,11 @@ export function jsonFrame(kind, obj) {
   out.set(body, 1);
   return out;
 }
-/** What kind of frame this is, and its JSON when it isn't a bundle. */
+/**
+ * Inspects the leading byte of `u8` and returns `{ kind: 'bundle' | 'hello' | 'control' | 'bad', value? }`.
+ * @sig peek(u8: Uint8Array): { kind: 'bundle' | 'hello' | 'control' | 'bad', value?: any }
+ * @example const p = peek(u8); if (p.kind === 'hello') onHello(p.value);
+ */
 export function peek(u8) {
   const kind = u8[0];
   if (kind === FRAME.bundle) return { kind: 'bundle' };
@@ -533,13 +763,11 @@ export function peek(u8) {
 }
 
 // ===================================================================== the room
-// A connection: an id (the peer id from its ticket), a join order (the host is the lowest present), a protocol (2 or 3)
-// and a send(frame) that takes a string (2) or a Uint8Array (3).
-//
-// For speed at hundreds of players per process, the hot paths use small integers instead of string keys: every moving
-// thing has a slot (room.slots), every connection an index (c.idx), and every id a key (room.keys) that each
-// connection's codec maps to its dictionary entry and baseline. Updates are logged once per room (room.upd) and handed
-// to each connection's pending list at the flush, instead of each update touching every connection.
+/**
+ * Creates an in-memory room state container used identically by relay nodes and peer-to-peer host pages.
+ * @sig newRoom(o?: { key?: string, project?: string, edit?: boolean, epoch?: number, limits?: Partial<typeof DEFAULT_LIMITS>, interest?: typeof DEFAULT_INTEREST | null, quant?: Partial<typeof DEFAULT_QUANT>, now?: number }): CoreRoom
+ * @example const room = newRoom({ key: 'mygame/lobby', project: 'mygame', now: Date.now() });
+ */
 export function newRoom(o = {}) {
   return {
     key: o.key || '',
@@ -576,8 +804,11 @@ function keyOf(room, s) {
 }
 const newOut = (room) => ({ rel: [], pend: [], flag: new Uint8Array(64), sent: [], meSeen: [], meAt: [], st: new Map(), stAt: new Map(), tokens: room.limits.downBytesPerSec, tokensAt: 0 });
 
-/** o: { id, ord, name, color, user, role, v (2 or 3), send(frame), close?(code, why), now, budget? (bytes a second for
- *  this connection: a slow route gets less than the room's) }. */
+/**
+ * Creates a peer connection handle (`v: 3` binary or `v: 2` JSON) with its own rate limiter, codecs, and outbound queues for `room`.
+ * @sig newConn(room: CoreRoom, o: { id: string, ord?: number, name?: string | null, color?: string | null, user?: string | null, role?: string, v?: 2 | 3, send: (frame: Uint8Array | string) => void, close?: (code: number, why: string) => void, now?: number, budget?: number }): CoreConn
+ * @example const conn = newConn(room, { id: 'p1', ord: 1, name: 'Ada', v: 3, send: (f) => ws.send(f) });
+ */
 export function newConn(room, o) {
   return {
     budget: Number.isFinite(o.budget) ? o.budget : null,
@@ -603,6 +834,11 @@ function sendFrame(room, c, frame) {
 function reliable(room, m, except) {
   for (const c of room.conns.values()) if (c.id !== except) c.out.rel.push(m);
 }
+/**
+ * Returns the room's connected peers sorted by ascending join order (`ord`).
+ * @sig peerList(room: CoreRoom): { c: string, name: string | null, color: string | null, user: string | null, ord: number, role: string, away?: true }[]
+ * @example const peers = peerList(room);
+ */
 export const peerList = (room) => [...room.conns.values()].sort((a, b) => a.ord - b.ord).map((c) => ({ c: c.id, name: c.name, color: c.color, user: c.user, ord: c.ord, role: c.role, ...(c.away ? { away: true } : {}) }));
 /** Who should host: the lowest join order among players whose page is present, else the lowest of all (everyone away). */
 const lowest = (room) => {
@@ -621,8 +857,11 @@ function pend(o, slot) {
   o.pend.push(slot);
 }
 
-/** Someone joined: their hello now, everyone else hears of them, and the world as it is follows in their first bundle.
- *  The same peer again (a new socket after a reconnect, a new stream): its place, ownership and sequence are kept. */
+/**
+ * Adds connection `c` to `room`, elects the lowest present `ord` as host, sends `c` its `'hello'` frame, and queues existing world state.
+ * @sig join(room: CoreRoom, c: CoreConn, now: number, o?: { keepHost?: boolean, resume?: string | null, hello?: Record<string, any> }): void
+ * @example join(room, conn, Date.now());
+ */
 export function join(room, c, now, o = {}) {
   const was = room.conns.get(c.id);
   if (was && was !== c && was.idx >= 0) { room.cidx[was.idx] = null; room.cfree.push(was.idx); }
@@ -646,9 +885,9 @@ export function join(room, c, now, o = {}) {
 }
 
 /**
- * A player's page went into the background (a hidden tab, a minimised or covered window) or came back (docs/net.md
- * "Away"). Everyone hears it. A host that goes away hands the room to the first present player, so what nobody owns
- * keeps moving; it doesn't take it back when it returns. When everyone was away, the first back hosts.
+ * Updates connection `c`'s background `away` status in `room`, broadcasts `'away'`, and hands off `room.host` when the host goes away.
+ * @sig setAway(room: CoreRoom, c: CoreConn, on: boolean): void
+ * @example setAway(room, conn, true);
  */
 export function setAway(room, c, on) {
   on = Boolean(on);
@@ -662,7 +901,11 @@ export function setAway(room, c, on) {
   if (next && next.id !== room.host) { room.host = next.id; reliable(room, { t: 'host', c: next.id }); }
 }
 
-/** Someone left (or timed out): what they owned goes back to the host; the next lowest order takes over if they hosted. */
+/**
+ * Removes connection `c` from `room`, releases its entity ownership and locks, and elects the next host if `c` was hosting.
+ * @sig leave(room: CoreRoom, c: CoreConn, why?: string): boolean
+ * @example leave(room, conn, 'left');
+ */
 export function leave(room, c, why = 'left') {
   if (room.conns.get(c.id) !== c) return false;
   room.conns.delete(c.id);
@@ -678,8 +921,11 @@ export function leave(room, c, why = 'left') {
   return true;
 }
 
-/** One frame from a connection: a string (protocol 2) or bytes (protocol 3). Returns control messages for the caller
- *  (the node or host page handles pings, signalling and migration itself). */
+/**
+ * Processes one incoming wire `frame` from connection `c` into `room` (applying rate limits and forwarding `express` immediately); returns control JSON when the frame is a control message.
+ * @sig receive(room: CoreRoom, c: CoreConn, frame: Uint8Array | string, now: number): any
+ * @example const ctrl = receive(room, conn, frameBytes, Date.now());
+ */
 export function receive(room, c, frame, now) {
   const size = typeof frame === 'string' ? frame.length : frame.length;
   c.stats.inBytes += size; c.stats.inMsgs++;
@@ -831,7 +1077,11 @@ function syncState(room, c, data, now) {
   }
 }
 
-/** World edits saved by a server: everyone applies them; what was kept of the things they rebuild is dropped. */
+/**
+ * Broadcasts server-saved world-edit operations (`list`) to `room` and drops stale entity transforms rebuilt by them (`publish_refused` when unauthorized at `/v1/net/publish`).
+ * @sig ops(room: CoreRoom, list: any[], by?: string | null, fx?: any, except?: string): void
+ * @example ops(room, [{ op: 'delete', id: 'crate-1' }], 'server', null);
+ */
 export function ops(room, list, by, fx, except) {
   for (const op of list) {
     const id = op && (op.id || (op.entity && op.entity.id));
@@ -840,7 +1090,11 @@ export function ops(room, list, by, fx, except) {
   }
   reliable(room, { t: 'ops', ops: list, by, c: except ?? null, fx }, except);
 }
-/** An event from the server (no sender) to everyone. */
+/**
+ * Broadcasts a reliable server event (`c: null`) with `name` and `data` to every connection in `room`.
+ * @sig event(room: CoreRoom, name: string, data?: any): void
+ * @example event(room, 'round-over', { winner: 'Ada' });
+ */
 export function event(room, name, data) { reliable(room, { t: 'ev', c: null, name, data }); }
 
 // ------------------------------------------------------------------ the bundles
@@ -857,7 +1111,11 @@ const moving = (v) => Math.abs(v[6] ?? 0) + Math.abs(v[7] ?? 0) + Math.abs(v[8] 
 // Rough wire sizes, for the budget before encoding (real bytes are counted after).
 const xfCost = (c, id, n) => (c.v === 3 ? 3 + Math.min(id.length, 2) + n * 2 : 8 + id.length + n * 7);
 
-/** Sends each connection its bundle (call every FLUSH_MS, or at the room's own rate). */
+/**
+ * Encodes and sends one bundle of due reliable events, avatars, entity transforms, and states to each active connection in `room`.
+ * @sig flush(room: CoreRoom, now: number): void
+ * @example flush(room, Date.now());
+ */
 export function flush(room, now) {
   // What changed since the last flush goes on each connection's pending list (not back to its sender).
   const upd = room.upd;
@@ -870,7 +1128,11 @@ export function flush(room, now) {
   }
   for (const c of room.conns.values()) if (!c.slow) flushOne(room, c, now);
 }
-/** Sends one connection its bundle now (a p2p host flushes a player on the slow fallback route less often). */
+/**
+ * Flushes pending room updates for a single connection `c` (used by peer-to-peer hosts for peers on the slow signal fallback route).
+ * @sig flushConn(room: CoreRoom, c: CoreConn, now: number): void
+ * @example flushConn(room, slowConn, Date.now());
+ */
 export function flushConn(room, c, now) {
   if (room.conns.get(c.id) !== c) return;
   const upd = room.upd;
@@ -992,7 +1254,11 @@ function flushOne(room, c, now) {
 }
 
 // ------------------------------------------------------------------ moving a room (docs/net.md "Moving a room")
-/** Everything this room keeps, as plain data (what a new carrier is seeded with). */
+/**
+ * Serializes all state held by `room` (owners, locks, entities, synced states, reliable sequences) into a plain object for carrier migration.
+ * @sig snapshot(room: CoreRoom): RoomSnapshot
+ * @example const snap = snapshot(hostRoom);
+ */
 export function snapshot(room) {
   return {
     epoch: room.epoch,
@@ -1005,7 +1271,11 @@ export function snapshot(room) {
     recent: [...room.seqs].map(([from, seq]) => ({ from, seq })),
   };
 }
-/** Loads a snapshot into an empty room (its connections join after). */
+/**
+ * Populates an empty `room` from a `snapshot(room)` object before migrating connections join it.
+ * @sig seed(room: CoreRoom, snap: RoomSnapshot): void
+ * @example seed(relayRoom, snap);
+ */
 export function seed(room, snap) {
   if (!snap || typeof snap !== 'object') return;
   if (Number.isFinite(snap.epoch)) room.epoch = Math.max(room.epoch, snap.epoch);
@@ -1061,8 +1331,19 @@ function slerp(a, b, k, out) {
 }
 const qa = [0, 0, 0, 1], qb = [0, 0, 0, 1], qc = [0, 0, 0, 1], ve = [0, 0, 0];
 
+/**
+ * Tracks per-sender one-way transit delay and jitter against a shared `clock()` function for adaptive `Track` playback delay.
+ * @sig class Links
+ * @example const links = new Links(() => net.now()); links.note('p2', stamp);
+ */
 export class Links {
   constructor(clock) { this.clock = clock; this.map = new Map(); }
+  /**
+   * Records a snapshot timestamp `at` from peer `from` and updates its smoothed transit and jitter estimates.
+   * @method links.note
+   * @sig links.note(from: string, at: number): void
+   * @example links.note(fromPeer, atStamp);
+   */
   note(from, at) {
     const d = this.clock() - at;
     if (!Number.isFinite(d)) return;
@@ -1072,10 +1353,63 @@ export class Links {
     if (d < l.transit) l.transit += (d - l.transit) * 0.3; else l.transit += (d - l.transit) * 0.01;
     l.jit += (Math.max(0, d - l.transit) - l.jit) * 0.06;
   }
+  /**
+   * Returns `{ transit, jit, n }` for peer `from`, or `undefined` if no packets have been noted.
+   * @method links.get
+   * @sig links.get(from: string): { transit: number, jit: number, n: number } | undefined
+   * @example const est = links.get('p2');
+   */
   get(from) { return this.map.get(from); }
+  /**
+   * Removes stored transit and jitter estimates for peer `from`.
+   * @method links.delete
+   * @sig links.delete(from: string): void
+   * @example links.delete('p2');
+   */
   delete(from) { this.map.delete(from); }
 }
 
+/**
+ * Indices `[ix, iy, iz]` of the 3D position coordinates in a `Track` value array (default `[0, 1, 2]`, or `null` for non-spatial arrays).
+ * @option pos
+ * @sig pos?: [number, number, number] | null
+ * @example const t = new Track({ pos: [0, 1, 2] });
+ */
+/**
+ * Indices `[ivx, ivy, ivz]` of velocity components in a `Track` value array used for dead-reckoning across short gaps.
+ * @option vel
+ * @sig vel?: [number, number, number] | null
+ * @example const t = new Track({ pos: [0, 1, 2], vel: [6, 7, 8] });
+ */
+/**
+ * Indices `[irx, iry, irz]` of YXZ Euler angles (radians) in a `Track` value array interpolated via quaternion slerp.
+ * @option euler
+ * @sig euler?: [number, number, number] | null
+ * @example const t = new Track({ pos: [0, 1, 2], euler: [3, 4, 5] });
+ */
+/**
+ * Array of value indices containing single-axis angles (radians) wrapped around `[-π, π]` during `Track` interpolation.
+ * @option yaw
+ * @sig yaw?: number[]
+ * @example const t = new Track({ pos: [0, 1, 2], yaw: [3] });
+ */
+/**
+ * Indices `[iqx, iqy, iqz, iqw]` of a quaternion in a `Track` value array interpolated with shortest-path `slerp`.
+ * @option quat
+ * @sig quat?: [number, number, number, number] | null
+ * @example const t = new Track({ pos: [0, 1, 2], quat: [3, 4, 5, 6] });
+ */
+/**
+ * Maximum extrapolation window in milliseconds when a `Track` samples ahead of its newest snapshot (default `450` with `vel`, `250` without).
+ * @option maxAhead
+ * @sig maxAhead?: number
+ * @example const t = new Track({ pos: [0, 1, 2], vel: [6, 7, 8], maxAhead: 350 });
+ */
+/**
+ * Snapshot interpolation buffer that plays stamped numeric arrays back smoothly with adaptive jitter delay, slerp, and dead-reckoning.
+ * @sig class Track
+ * @example const track = new Track({ pos: [0, 1, 2], euler: [3, 4, 5], vel: [6, 7, 8] });
+ */
 export class Track {
   /** o: { pos: [i, i, i], vel: [i, i, i] | null, euler: [i, i, i] | null, yaw: [i...], quat: [i, i, i, i] | null, maxAhead }; env: { clock, links, wall, stats } */
   constructor(o = {}, env = {}) {
@@ -1086,7 +1420,19 @@ export class Track {
     this.statsRef = env.stats || null;
     this.buf = []; this.gaps = []; this.interval = 100; this.delay = null; this.at = 0; this.from = null; this.out = []; this.ahead = 0;
   }
+  /**
+   * Number of stamped snapshots currently buffered in this `Track`.
+   * @method track.size
+   * @sig track.size: number
+   * @example if (track.size > 0) drawEntity(track.sample());
+   */
   get size() { return this.buf.length; }
+  /**
+   * The most recent `{ at, v }` snapshot in the buffer, or `null` when empty.
+   * @method track.newest
+   * @sig track.newest: { at: number, v: number[] } | null
+   * @example const latestSnap = track.newest;
+   */
   get newest() { return this.buf.length ? this.buf[this.buf.length - 1] : null; }
   still(s) {
     const o = this.o;
@@ -1097,6 +1443,12 @@ export class Track {
     const d = Math.abs(s.v[o.pos[0]] - p.v[o.pos[0]]) + Math.abs(s.v[o.pos[1]] - p.v[o.pos[1]]) + Math.abs(s.v[o.pos[2]] - p.v[o.pos[2]]);
     return (d / Math.max(1, s.at - p.at)) * 1000 < 0.1;
   }
+  /**
+   * Appends a stamped value array `vals` at room timestamp `at` from optional sender `from` (dropping out-of-order arrivals).
+   * @method track.push
+   * @sig track.push(at: number, vals: number[], from?: string): void
+   * @example track.push(at, values, fromPeer);
+   */
   push(at, vals, from) {
     if (!Number.isFinite(at)) at = this.clock();
     const b = this.buf;
@@ -1120,6 +1472,12 @@ export class Track {
     const transit = l ? l.transit : 60, jit = l ? l.jit : 10;
     return Math.max(0, transit) + Math.min(this.interval, 1500) * 1.05 + jit * 2.5 + 8;
   }
+  /**
+   * Samples the interpolated (or velocity-extrapolated) value array for render time `now - delay`, or returns `null` if empty.
+   * @method track.sample
+   * @sig track.sample(now?: number): number[] | null
+   * @example const vals = track.sample(); if (vals) mesh.position.set(vals[0], vals[1], vals[2]);
+   */
   sample(now = this.clock()) {
     const b = this.buf;
     if (!b.length) return null;
@@ -1187,6 +1545,12 @@ export class Track {
     }
     return out;
   }
+  /**
+   * Returns the newest snapshot extrapolated forward to `now` (capped at `cap` ms) for immediate collision or handoff checks.
+   * @method track.latest
+   * @sig track.latest(now?: number, cap?: number): number[] | null
+   * @example const current = track.latest(net.now(), 200);
+   */
   latest(now = this.clock(), cap = 400) {
     const a = this.newest;
     if (!a) return null;
@@ -1196,5 +1560,11 @@ export class Track {
     if (o.pos && o.vel) for (let k = 0; k < 3; k++) v[o.pos[k]] += a.v[o.vel[k]] * dt;
     return v;
   }
+  /**
+   * Empties all buffered snapshots, interval history, and adaptive delay state.
+   * @method track.clear
+   * @sig track.clear(): void
+   * @example track.clear();
+   */
   clear() { this.buf.length = 0; this.gaps.length = 0; this.delay = null; }
 }
