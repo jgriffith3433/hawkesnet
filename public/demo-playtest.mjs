@@ -9,7 +9,8 @@
 //   errors       the service's errors (docs/errors.md): each refusal the page can cause answers with a code, a plain message
 //                and a docs link, and the docs page lists every code.
 //   two-players  two (or more) real browsers on one ?room= (Studio's peers playtest) find each other, move, and trade
-//                messages.
+//                messages. Optional o.afterTwoPlayers(c) runs more checks while the other player is still in the room
+//                (hawkesnet's orb game; other demos leave it unset).
 //
 // Each check shows on the page as it passes or fails (top right), so the video and screenshots say what happened, and the
 // report's problems say which check failed and why. Nothing runs until Studio calls start() or the address has
@@ -377,6 +378,15 @@ export function installNetPlaytest(o) {
       metric('rttMs', ms);
       return `round trip ${ms} ms`;
     });
+    progress(0.85);
+    // Optional hawkesnet-only (or other) checks while the peer is still here: orb collect, shared state, …
+    if (o.afterTwoPlayers) {
+      await o.afterTwoPlayers({
+        check, main, other, until, wait, metric,
+        roundTrips: (f, w, t) => roundTrips(f, w, t),
+        openBot: o.openBot, event, step,
+      });
+    }
     progress(1);
     // Stay a little so the other browser can finish its own checks against this one.
     await wait(8000);
