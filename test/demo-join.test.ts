@@ -34,3 +34,29 @@ for (const transport of ['auto', 'relay']) {
     }
   });
 }
+
+// Pins the two-players criterion: Studio peers open two browsers on one ?room=demo-<id>; both must see each other.
+// A playtest with an empty pages list means the second browser never opened (runner infra), not a join bug here.
+test('two players in a demo-* room see each other (Studio two-players peers path)', async () => {
+  assert.match(page, /`demo-\$\{Math\.random\(\)\.toString\(36\)\.slice\(2, 7\)\}`/, 'the demo mints demo-<id> rooms');
+  const room = `demo-meet-${Math.random().toString(36).slice(2, 7)}`;
+  const cfg = { p2pMax: 8, maxPlayers: 64, profile: 'light' };
+  const o = (name: string, sub: string) => ({
+    project: 'netdemo', endpoint: hub.endpoint, transport: 'auto', name, sub, config: cfg, log: false, leaveOnHide: false,
+  });
+  const a = await join(room, o('Guest A', 'p1'));
+  const b = await join(room, o('Guest B', 'p2'));
+  try {
+    const until = Date.now() + 5000;
+    for (;;) {
+      if (a.peers.has(b.id) && b.peers.has(a.id)) break;
+      if (Date.now() > until) throw new Error(`peers did not meet in ${room} (A sees ${a.peers.size}, B sees ${b.peers.size})`);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.equal(a.host, a.id, 'first joiner is host');
+    assert.ok(a.transport === 'p2p' || a.transport === 'relay', `unexpected transport ${a.transport}`);
+  } finally {
+    try { await b.leave(); } catch { /* gone */ }
+    try { await a.leave(); } catch { /* gone */ }
+  }
+});
