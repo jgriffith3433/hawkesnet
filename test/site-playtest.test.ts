@@ -162,12 +162,14 @@ test('addInputEvents: a run the address started before it was called keeps its c
   assert.ok(e.t >= 5 && e.t < 6, `t is ${e.t}`);
 });
 
-test('the demo: the page logs each tap and drag, and smoke drags and taps the arena with touch and mouse pointers', () => {
+test('the demo: the page logs each tap, drag and stick drag; smoke drives the stick on phone and absolute drag on desktop', () => {
   const html = fs.readFileSync(new URL('../public/demo.html', import.meta.url), 'utf8');
-  assert.match(html, /inputNote\?\.\(gesture\.moves \? 'drag' : 'tap'/);
+  assert.match(html, /inputNote\?\.\(kind,/);
+  assert.match(html, /stick-drag|'stick'/);
   assert.match(html, /addEventListener\('pointerup', endGesture\)/);
   assert.match(html, /inputNote = addInputEvents\(playtest\)/);
   assert.ok(html.indexOf('await dragChecks(c)') < html.indexOf('await peerChecks(c)'), 'the drag checks run in smoke before the peer checks');
-  assert.match(html, /\['touch', \[\[/); assert.match(html, /\['mouse', \[\[/);
+  assert.match(html, /stickDrag/);
+  assert.match(html, /Dragging the floating stick moves this player/);
   assert.match(html, /Dragging on the arena moves this player/);
 });

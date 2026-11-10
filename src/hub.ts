@@ -115,6 +115,7 @@ export async function startHub(o: HubOptions = {}) {
   const sitePlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site-playtest.mjs');
   const orbsPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'orbs-playtest.mjs');
   const feedbackPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'feedback-playtest.mjs');
+  const phonePlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'phone-playtest.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
@@ -183,6 +184,10 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/feedback-playtest.mjs') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(feedbackPlaytest));
+    }
+    if (route === '/phone-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(phonePlaytest));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

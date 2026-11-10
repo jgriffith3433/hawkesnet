@@ -2,15 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Hawkes Net demo</title>
 <link rel="stylesheet" href="/site.css">
 <style>
-  :root { --warn: #fbbf24; }
+  :root { --warn: #fbbf24; --safe-t: env(safe-area-inset-top, 0px); --safe-r: env(safe-area-inset-right, 0px); --safe-b: env(safe-area-inset-bottom, 0px); --safe-l: env(safe-area-inset-left, 0px); }
   main { font-size: 15px; line-height: 1.45; max-width: 1100px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 16px; grid-template-columns: 1fr 320px; }
   main > * { min-width: 0; }
+  .panel-toggle { display: none; }
   @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } main > * { min-width: 0; } }
-  @media (max-width: 640px) { main { padding: 12px 12px 32px; } .row button { flex: 1 1 140px; min-height: 44px; } #peers { max-height: 200px; } }
+  @media (max-width: 640px) {
+    main { padding: max(8px, var(--safe-t)) max(12px, var(--safe-r)) max(24px, var(--safe-b)) max(12px, var(--safe-l)); gap: 10px; }
+    .lead { display: none; }
+    .phone-how:not([hidden]) { display: block; margin: 0; color: var(--muted); font-size: 14px; }
+    .row.actions { gap: 8px; } .row.actions button { flex: 1 1 140px; min-height: 44px; }
+    /* Side panel collapses; Room sits in the actions row under the arena (never over the stick zone or header Menu). */
+    aside.side { display: none; position: fixed; z-index: 30; top: max(56px, calc(var(--safe-t) + 52px)); right: max(8px, var(--safe-r)); left: max(8px, var(--safe-l)); max-height: min(48vh, 380px); overflow: auto; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+    aside.side.open { display: block; }
+    .panel-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 12px; font-weight: 600; }
+    .panel-toggle[aria-expanded="true"] { border-color: var(--accent); }
+    .arena-wrap { position: relative; touch-action: none; }
+    #peers { max-height: 160px; }
+  }
   h1 { font-size: 20px; margin: 0 0 4px; } p { margin: 0; color: var(--muted); }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
   canvas { width: 100%; aspect-ratio: 16 / 10; display: block; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); touch-action: none; }
@@ -30,9 +43,11 @@
 <main>
   <section class="card">
     <h1>Hawkes Net</h1>
-    <p>Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena — touch a glowing orb to score. The host runs sixty-second rounds (shared timer, then a winner and scoreboard, then a fresh round). Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
-    <div class="row" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
-    <div class="row">
+    <p class="lead">Everyone on this page with the same room plays together. Move with the arrow keys, or drag or tap in the arena — touch a glowing orb to score. The host runs sixty-second rounds (shared timer, then a winner and scoreboard, then a fresh round). Small rooms go peer to peer; past <span id="p2pmax">8</span> players the room moves to the relay without anyone reconnecting.</p>
+    <p class="phone-how" hidden>On a phone: press and drag in the lower half of the arena — a floating stick appears. Timer and your score sit in the safe area at the top.</p>
+    <div class="row arena-wrap" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
+    <div class="row actions">
+      <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false" aria-controls="side" title="Room info">Room</button>
       <button class="primary" id="share">Copy invite link</button>
       <button id="bots" disabled>Add 5 bots</button>
       <button id="migrate" disabled>Move to the relay</button>
@@ -40,7 +55,7 @@
       <button id="leave">Leave</button>
     </div>
   </section>
-  <aside class="card">
+  <aside class="card side" id="side">
     <dl>
       <dt>Room</dt><dd id="room"></dd>
       <dt>You</dt><dd id="me">connecting…</dd>
@@ -253,14 +268,94 @@
   addEventListener('resize', fitCanvas);
   syncMuteBtn();
   $('mute').onclick = () => setMuted(!muted);
-  // Pointer events cover mouse, pen and touch: a press or tap puts your player there, dragging carries it (touch-action: none on the canvas keeps the page from scrolling).
-  const moveTo = (e) => { const r = cv.getBoundingClientRect(); pos.x = Math.max(15, Math.min(W - 15, ((e.clientX - r.left) / r.width) * W)); pos.y = Math.max(15, Math.min(H - 15, ((e.clientY - r.top) / r.height) * H)); };
+  // Phone comfort: under 640 px (or ?phone=1) the lower half of the arena is a floating thumb stick; the side panel folds into Room.
+  const forcePhone = q.get('phone') === '1';
+  const phoneMode = () => forcePhone || innerWidth <= 640;
+  const howPhone = document.querySelector('.phone-how');
+  const syncPhoneChrome = () => {
+    document.body.classList.toggle('phone', phoneMode());
+    if (howPhone) howPhone.hidden = !phoneMode();
+  };
+  syncPhoneChrome();
+  addEventListener('resize', syncPhoneChrome);
+  const panelBtn = $('panel-toggle'), side = $('side');
+  const setPanelOpen = (on) => {
+    side.classList.toggle('open', !!on);
+    panelBtn.setAttribute('aria-expanded', on ? 'true' : 'false');
+  };
+  panelBtn.onclick = () => setPanelOpen(panelBtn.getAttribute('aria-expanded') !== 'true');
+  // Safe-area insets → arena units (timer + score sit inside them on phone).
+  const safeProbe = document.createElement('div');
+  safeProbe.setAttribute('aria-hidden', 'true');
+  safeProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+  document.body.appendChild(safeProbe);
+  const safeArena = () => {
+    const cs = getComputedStyle(safeProbe), r = cv.getBoundingClientRect();
+    const sx = W / Math.max(1, r.width), sy = H / Math.max(1, r.height);
+    return {
+      t: Math.max(10, (parseFloat(cs.paddingTop) || 0) * sy + 10),
+      r: Math.max(10, (parseFloat(cs.paddingRight) || 0) * sx + 10),
+      b: Math.max(10, (parseFloat(cs.paddingBottom) || 0) * sy + 10),
+      l: Math.max(10, (parseFloat(cs.paddingLeft) || 0) * sx + 10),
+    };
+  };
+  // Floating stick: press anywhere in the lower half; dead zone + visible ring; drives velocity (not click-to-place).
+  const STICK_R = 78, STICK_DEAD = 0.18, STICK_SPEED = 260;
+  let stick = null; // { id, ox, oy, dx, dy, type }
+  const arenaFromEvent = (e) => {
+    const r = cv.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H };
+  };
+  const moveTo = (e) => {
+    const a = arenaFromEvent(e);
+    pos.x = Math.max(15, Math.min(W - 15, a.x));
+    pos.y = Math.max(15, Math.min(H - 15, a.y));
+  };
+  const stickUpdate = (e) => {
+    if (!stick || e.pointerId !== stick.id) return;
+    const a = arenaFromEvent(e);
+    let dx = a.x - stick.ox, dy = a.y - stick.oy;
+    const len = Math.hypot(dx, dy) || 1;
+    if (len > STICK_R) { dx = (dx / len) * STICK_R; dy = (dy / len) * STICK_R; }
+    stick.dx = dx; stick.dy = dy;
+  };
+  const stickNorm = () => {
+    if (!stick) return { x: 0, y: 0, mag: 0 };
+    const mag = Math.hypot(stick.dx, stick.dy) / STICK_R;
+    if (mag < STICK_DEAD) return { x: 0, y: 0, mag: 0 };
+    const use = (mag - STICK_DEAD) / (1 - STICK_DEAD);
+    const ang = Math.atan2(stick.dy, stick.dx);
+    return { x: Math.cos(ang) * use, y: Math.sin(ang) * use, mag: use };
+  };
   // `inputNote` is the playtest's (it puts each finished gesture in the run's events: a tap or a drag, with its pointer type and where it went); null otherwise.
   let inputNote = null, gesture = null;
   const spot = () => `${Math.round(pos.x)},${Math.round(pos.y)}`;
-  cv.addEventListener('pointerdown', (e) => { if (e.button > 0) return; unlockAudio(); try { cv.setPointerCapture(e.pointerId); } catch {} moveTo(e); gesture = { type: e.pointerType || 'mouse', moves: 0, from: spot() }; });
-  cv.addEventListener('pointermove', (e) => { if (e.buttons & 1) { moveTo(e); if (gesture) gesture.moves++; } });
-  const endGesture = () => { if (gesture) inputNote?.(gesture.moves ? 'drag' : 'tap', `${gesture.type}: ${gesture.moves} moves, from ${gesture.from} to ${spot()}`); gesture = null; };
+  cv.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    unlockAudio();
+    try { cv.setPointerCapture(e.pointerId); } catch { /* older */ }
+    const a = arenaFromEvent(e);
+    gesture = { type: e.pointerType || 'mouse', moves: 0, from: spot(), stick: false };
+    if (phoneMode() && a.y >= H * 0.5) {
+      stick = { id: e.pointerId, ox: a.x, oy: a.y, dx: 0, dy: 0, type: e.pointerType || 'touch' };
+      gesture.stick = true;
+      e.preventDefault();
+      return;
+    }
+    moveTo(e);
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (stick && e.pointerId === stick.id) { stickUpdate(e); if (gesture) gesture.moves++; return; }
+    if (e.buttons & 1) { moveTo(e); if (gesture) gesture.moves++; }
+  });
+  const endGesture = (e) => {
+    if (stick && (!e || e.pointerId === stick.id)) stick = null;
+    if (gesture) {
+      const kind = gesture.stick ? (gesture.moves ? 'stick-drag' : 'stick') : (gesture.moves ? 'drag' : 'tap');
+      inputNote?.(kind, `${gesture.type}: ${gesture.moves} moves, from ${gesture.from} to ${spot()}`);
+      gesture = null;
+    }
+  };
   cv.addEventListener('pointerup', endGesture); cv.addEventListener('pointercancel', endGesture);
   const config = { p2pMax, maxPlayers: 64, profile: 'light' };
   const direct = blocked ? false : undefined;
@@ -484,6 +579,38 @@
     wire: wireOrbs, touchAt, snapshot, beginTestRound, hostRoundTick,
     ORB_N, ORB_R, ROUND_SEC, RESULT_MS, roundSec: () => ROUND_SEC,
   };
+  // Phone comfort surface for the playtest: stick state, safe HUD, collapsed panel, no controls in the stick zone.
+  const stickZoneHits = () => {
+    if (!phoneMode()) return [];
+    const r = cv.getBoundingClientRect();
+    const zone = { left: r.left, top: r.top + r.height * 0.5, right: r.right, bottom: r.bottom };
+    const hit = (el) => {
+      if (!el || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') return false;
+      const b = el.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2) return false;
+      return !(b.right < zone.left || b.left > zone.right || b.bottom < zone.top || b.top > zone.bottom);
+    };
+    const bad = [];
+    for (const el of [panelBtn, ...document.querySelectorAll('.row.actions button')]) {
+      if (hit(el)) bad.push(el.id || el.textContent?.trim() || 'button');
+    }
+    if (side.classList.contains('open') && hit(side)) bad.push('side-panel');
+    return bad;
+  };
+  window.hawkesNetPhone = {
+    phoneMode, stickR: STICK_R, stickDead: STICK_DEAD,
+    stick: () => (stick ? { ox: stick.ox, oy: stick.oy, dx: stick.dx, dy: stick.dy, mag: stickNorm().mag, type: stick.type } : null),
+    panelOpen: () => side.classList.contains('open'),
+    setPanelOpen,
+    panelButton: () => panelBtn,
+    safe: safeArena,
+    myScore: () => (net && orbGames.get(net) ? (orbGames.get(net).scores[net.id] || 0) : 0),
+    pos: () => ({ x: pos.x, y: pos.y }),
+    setPos: (x, y) => { pos.x = Math.max(15, Math.min(W - 15, x)); pos.y = Math.max(15, Math.min(H - 15, y)); },
+    controlsInStickZone: stickZoneHits,
+    canvasRect: () => cv.getBoundingClientRect(),
+    W, H,
+  };
   $('bots').onclick = async () => {
     // Bots: more players in this page (no singleton), wandering.
     for (let i = 0; i < 5; i++) {
@@ -582,6 +709,8 @@
     hostRoundTick(net);
     const sp = 260 * dt;
     if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
+    const sn = stickNorm();
+    if (sn.mag > 0) { pos.x += sn.x * STICK_SPEED * dt; pos.y += sn.y * STICK_SPEED * dt; }
     pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
     net.pose([pos.x, 0, pos.y], 0);
     touchAt(net, pos.x, pos.y); // event-driven collect: only when this player is on an orb
@@ -638,8 +767,10 @@
       if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
       g.globalAlpha = 1;
     }
-    // Round clock (top) and result titles — upright canvas text after dots.
+    // Round clock + score in the safe area (phone); result titles — upright canvas text after dots.
     let timerLeft = 0;
+    const safe = safeArena();
+    const myScore = game ? (game.scores[net.id] || 0) : 0;
     if (game && game.phase === 'play' && game.endsAt) {
       timerLeft = Math.max(0, Math.ceil((game.endsAt - Date.now()) / 1000));
       const urgent = timerLeft <= 10;
@@ -649,8 +780,17 @@
       g.textAlign = 'center'; g.textBaseline = 'top';
       g.globalAlpha = pulse;
       g.fillStyle = urgent ? '#fbbf24' : ink;
-      g.fillText(String(timerLeft), W / 2, 10);
+      g.fillText(String(timerLeft), W / 2, safe.t);
       g.restore();
+      // On phone the side panel is folded away: keep your score in the top-left safe area.
+      if (phoneMode()) {
+        g.save();
+        g.font = 'bold 18px Inter, system-ui, sans-serif';
+        g.textAlign = 'left'; g.textBaseline = 'top';
+        g.fillStyle = ink;
+        g.fillText(`You ${myScore}`, safe.l, safe.t + 4);
+        g.restore();
+      }
     } else if (game && game.phase === 'result') {
       const winName = game.winner?.name || 'Nobody';
       const winScore = game.winner ? game.winner.score : 0;
@@ -674,10 +814,26 @@
       }
       g.textAlign = 'center';
     }
+    // Floating stick ring (lower half): visible while a thumb is down.
+    if (stick) {
+      const n = stickNorm();
+      g.save();
+      g.beginPath(); g.arc(stick.ox, stick.oy, STICK_R, 0, 7);
+      g.strokeStyle = 'rgba(125, 177, 255, 0.55)'; g.lineWidth = 3; g.stroke();
+      g.beginPath(); g.arc(stick.ox, stick.oy, STICK_R * STICK_DEAD, 0, 7);
+      g.strokeStyle = 'rgba(125, 177, 255, 0.28)'; g.lineWidth = 2; g.stroke();
+      const kx = stick.ox + stick.dx, ky = stick.oy + stick.dy;
+      g.beginPath(); g.arc(kx, ky, 28, 0, 7);
+      g.fillStyle = n.mag > 0 ? 'rgba(125, 177, 255, 0.55)' : 'rgba(125, 177, 255, 0.35)'; g.fill();
+      g.strokeStyle = 'rgba(238, 240, 243, 0.9)'; g.lineWidth = 2; g.stroke();
+      g.restore();
+    }
     window.hawkesNetDemoView = {
-      w: W, h: H, dpr: canvasDpr,
+      w: W, h: H, dpr: canvasDpr, phone: phoneMode(),
       orbs: game ? game.orbs.map((o) => ({ id: o.id, x: o.x, y: o.y, r: ORB_R, gen: o.gen })) : [],
       scores: game ? { ...game.scores } : {},
+      hud: { timerLeft, score: myScore, safe },
+      stick: stick ? { ox: stick.ox, oy: stick.oy, dx: stick.dx, dy: stick.dy, r: STICK_R, dead: STICK_DEAD, mag: stickNorm().mag, type: stick.type } : null,
       round: game ? {
         n: game.round, phase: game.phase, endsAt: game.endsAt, playMs: game.playMs, leftSec: timerLeft,
         winner: game.winner ? { ...game.winner } : null,
@@ -722,17 +878,27 @@
   if (!net) paintJoining(); // the first paint is now, not at the next frame
   const { installNetPlaytest } = await playtestFile;
   const { siteChecks, addSiteScenario, addInputEvents } = await import('/site-playtest.mjs'); // the site checks: the `site` scenario, and the end of `smoke`
-  // On a phone-sized page the bot plays by touch: a finger pressed on the arena and dragged (pointer events, pointerType touch).
-  // `sample` is called after each move, so a check can see the player follow the finger.
-  const phone = () => innerWidth <= 640;
+  // On a phone-sized page the bot plays by the floating stick (touch pointer events in the lower half). Desktop keeps click-drag and keys.
+  const phone = () => phoneMode();
   const pointerDrag = async (path, ms, { type = 'touch', sample = () => {} } = {}) => {
     const r = cv.getBoundingClientRect(), id = type === 'mouse' ? 1 : 7;
-    const at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: id, pointerType: type, isPrimary: true, bubbles: true });
+    const at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: id, pointerType: type, isPrimary: true, bubbles: true, cancelable: true });
     cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(path[0]), button: 0, buttons: 1 })); sample(0);
     for (let i = 1; i < path.length; i++) { await new Promise((res) => setTimeout(res, ms / path.length)); cv.dispatchEvent(new PointerEvent('pointermove', { ...at(path[i]), buttons: 1 })); sample(i); }
     cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
   };
-  const touchDrag = (path, ms) => pointerDrag(path, ms, { type: 'touch' });
+  // Floating stick path: uv in arena (v must be >= 0.5). Origin is the first point; later points pull the knob.
+  const stickDrag = async (path, ms, { type = 'touch', sample = () => {} } = {}) => {
+    const r = cv.getBoundingClientRect(), id = 11;
+    const at = ([u, v]) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: id, pointerType: type, isPrimary: true, bubbles: true, cancelable: true });
+    cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(path[0]), button: 0, buttons: 1 })); sample(0);
+    for (let i = 1; i < path.length; i++) {
+      await new Promise((res) => setTimeout(res, ms / Math.max(1, path.length - 1)));
+      cv.dispatchEvent(new PointerEvent('pointermove', { ...at(path[i]), buttons: 1 }));
+      sample(i);
+    }
+    cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
+  };
   const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
@@ -743,8 +909,15 @@
     product: 'hawkes-net', where: location.host, ready: () => true, main: () => net,
     openBlocked: async (r, name, logged) => { const n = await join(r, { project: 'netdemo', endpoint: location.origin, transport: 'auto', direct: false, name, role: 'player', config: { p2pMax: 8, maxPlayers: 64, profile: 'light' }, sub: `fb-${Math.random()}`, log: false }); if (logged) n.when('transport', (e) => { if (e.why === 'links failed') log("Couldn't connect directly, switched to relay"); }); return n; },
     openBot: () => openPlaytestPeer('Playtest bot', `pt-${Math.random()}`),
-    drive: async (step) => { if (phone()) { await touchDrag([[0.3, 0.4], [0.4, 0.4], [0.5, 0.45], [0.6, 0.55], [0.65, 0.6]], 900); } else { await key('ArrowRight', 900); await key('ArrowDown', 700); } await step(100); },
-    cornerDrive: async () => { if (phone()) await touchDrag([[0.5, 0.5], [0.25, 0.25], [0.02, 0.02], [0, 0]], 600); else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); } },
+    drive: async (step) => {
+      if (phone()) await stickDrag([[0.35, 0.72], [0.55, 0.72], [0.7, 0.78], [0.75, 0.82]], 1100);
+      else { await key('ArrowRight', 900); await key('ArrowDown', 700); }
+      await step(100);
+    },
+    cornerDrive: async () => {
+      if (phone()) await stickDrag([[0.5, 0.7], [0.2, 0.55], [0.15, 0.52]], 900);
+      else { await key('ArrowLeft', 4200); await key('ArrowUp', 3000); }
+    },
     switchLines: () => $('log').textContent.split('\n').filter((l) => l.includes("Couldn't connect directly")),
     view: () => window.hawkesNetDemoView,
     joined: () => ({ ms: joinInfo.ms, text: joinInfo.text, botsOffWhileJoining: joinInfo.botsOff, migrateOffWhileJoining: joinInfo.migrateOff, botsOn: !$('bots').disabled, migrateOn: !$('migrate').disabled, room, failed: joinInfo.failed }),
@@ -778,25 +951,56 @@
     main: () => net,
     openPeer: () => openPlaytestPeer('Feedback peer', `fx-${Math.random()}`),
     keyHold: (k, ms) => key(k, ms),
-    pointerTap: (uv) => pointerDrag([uv], 0, { type: phone() ? 'touch' : 'mouse' }),
+    pointerTap: (uv) => pointerDrag([[uv[0], Math.min(uv[1], 0.45)]], 0, { type: phone() ? 'touch' : 'mouse' }),
     driveTo: async (x, y) => {
+      if (phone()) {
+        // Steer with the floating stick toward the target (real touch path).
+        const t0 = performance.now();
+        while (performance.now() - t0 < 2800 && Math.hypot(pos.x - x, pos.y - y) > 18) {
+          const ang = Math.atan2(y - pos.y, x - pos.x);
+          const ou = pos.x / W, ov = 0.72;
+          const u = ou + Math.cos(ang) * 0.18, v = Math.min(0.92, Math.max(0.55, ov + Math.sin(ang) * 0.12));
+          await stickDrag([[ou, ov], [u, v]], 280);
+        }
+        return;
+      }
       const from = [pos.x / W, pos.y / H], to = [x / W, y / H];
-      await pointerDrag([from, [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], to], 700, { type: phone() ? 'touch' : 'mouse' });
+      await pointerDrag([from, [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2], to], 700, { type: 'mouse' });
     },
     untilReady: (until) => until(() => net && net.id, 15000, 'the demo to join its room'),
   });
+  const { addPhoneScenario } = await import('/phone-playtest.mjs');
+  addPhoneScenario(playtest, {
+    main: () => net,
+    stickDrag,
+    untilReady: (until) => until(() => net && net.id, 15000, 'the demo to join its room'),
+  });
   inputNote = addInputEvents(playtest); // from here the page's own tap and drag events are in the run's report
-  // Criterion: dragging or tapping on the arena moves your player. The bot presses, drags and lifts with pointer events (touch, then mouse), and the
-  // checks read where the player is after each step: it must follow the pointer, and end where the pointer ended.
+  // Desktop: absolute drag/tap. Phone: floating stick in the lower half moves the player.
   async function dragChecks({ check, metric }) {
     const arena = (u, v) => [u * W, v * H];
     const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (phone()) {
+      await check('Dragging the floating stick moves this player (touch, phone size)', async () => {
+        const before = [pos.x, pos.y];
+        let sawStick = false;
+        await stickDrag([[0.4, 0.7], [0.62, 0.7], [0.78, 0.74]], 1000, {
+          sample: () => { if (window.hawkesNetPhone?.stick()?.mag > 0) sawStick = true; },
+        });
+        await new Promise((r) => setTimeout(r, 50));
+        const travelled = Math.round(dist(before, [pos.x, pos.y]));
+        if (!sawStick) throw new Error('the stick ring never left its dead zone during the drag');
+        if (travelled < 40) throw new Error(`stick drag moved the player only ${travelled} units`);
+        metric('stickDragUnits', travelled);
+        return `stick moved the player ${travelled} units`;
+      });
+      return;
+    }
     for (const [type, path] of [['touch', [[0.2, 0.3], [0.28, 0.36], [0.36, 0.42], [0.44, 0.5], [0.5, 0.55]]], ['mouse', [[0.8, 0.2], [0.72, 0.28], [0.64, 0.36], [0.56, 0.44], [0.5, 0.2]]]]) {
-      await check(`Dragging on the arena moves this player (${type} pointer${phone() ? ', phone size' : ''})`, async () => {
+      await check(`Dragging on the arena moves this player (${type} pointer)`, async () => {
         const seen = [];
         await pointerDrag(path, 800, { type, sample: () => seen.push([pos.x, pos.y]) });
         const end = arena(...path[path.length - 1]);
-        // Every sample was taken right after a move event: the player stood where that finger was (within the arena's pixel rounding), so it followed all the way.
         const off = seen.map((p, i) => dist(p, arena(...path[i])));
         const worst = Math.round(Math.max(...off));
         if (worst > 8) throw new Error(`the player was ${worst} arena units from the ${type} pointer at its worst (it should follow it)`);
@@ -809,7 +1013,7 @@
     }
     await check('Tapping the arena puts this player there', async () => {
       const target = [0.35, 0.7];
-      await pointerDrag([target], 0, { type: phone() ? 'touch' : 'mouse' });
+      await pointerDrag([target], 0, { type: 'mouse' });
       const end = arena(...target);
       if (dist([pos.x, pos.y], end) > 8) throw new Error(`a tap at ${Math.round(end[0])},${Math.round(end[1])} left the player at ${Math.round(pos.x)},${Math.round(pos.y)}`);
       return `at ${Math.round(pos.x)},${Math.round(pos.y)}`;
