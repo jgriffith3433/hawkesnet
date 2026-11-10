@@ -962,6 +962,8 @@
     botPose: (u) => [200 + 500 * u, 0, 450],
     tolerance: 8,
     extra: async (c) => {
+      // Wire the smoke bot before migrate so it keeps `_s` / actions across the p2p→relay move (a real second page wires on join).
+      if (c.bot) wireOrbs(c.bot);
       await dragChecks(c); await peerChecks(c);
       await orbChecks({ ...c, collector: c.bot, openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: () => {} });
       await siteChecks({ check: c.check, metric: c.metric });

@@ -204,6 +204,42 @@ test('orb rounds: short play ends with the same winner on both, then scores rese
   }
 });
 
+test('orb game: after p2p→relay, a peer that wires late still gets orbs and collect syncs', async () => {
+  // Smoke wires the bot after migrate; `_s` on the new stream must not be dropped before sync.state is registered.
+  const hub = await startTestHub();
+  const cfg = { config: { p2pMax: 8, maxPlayers: 64 } };
+  const opts = (name: string, sub: string) => ({
+    project: 'netdemo', endpoint: hub.url, transport: 'auto' as const, name, log: false, leaveOnHide: false, sub, ...cfg,
+  });
+  const a = await join('orbs-relay', opts('Host', 'ar'));
+  const b = await join('orbs-relay', opts('Guest', 'br'));
+  try {
+    await wait(() => a.peers.has(b.id) && b.peers.has(a.id), 5000, 'peers');
+    assert.equal(a.transport, 'p2p');
+    const wa = wire(a);
+    await wait(() => wa.game.orbs.length === ORB_N, 5000, 'host orbs');
+    await new Promise((r) => setTimeout(r, 1100)); // host `_syncStates` while B is still unwired
+    a.migrate('game asked');
+    await wait(() => a.transport === 'relay' && b.transport === 'relay', 10000, 'relay');
+    await new Promise((r) => setTimeout(r, 1100)); // post-migrate `_s` lands before B wires
+    const wb = wire(b);
+    await wait(() => {
+      if (wa.game.orbs.length !== ORB_N || wb.game.orbs.length !== ORB_N) return false;
+      const key = (o: any) => `${o.id}:${o.x}:${o.y}:${o.gen}`;
+      return wa.game.orbs.map(key).sort().join('|') === wb.game.orbs.map(key).sort().join('|');
+    }, 8000, 'same orbs after late wire');
+    const target = { ...wa.game.orbs[0] };
+    const before = wa.game.scores[b.id] || 0;
+    wb.touch({ orb: target.id, gen: target.gen, by: b.id });
+    await wait(() => (wa.game.scores[b.id] || 0) > before && (wb.game.scores[b.id] || 0) > before, 3000, "B's score on both after relay");
+    const moved = wa.game.orbs.find((o: any) => o.id === target.id);
+    assert.ok(moved && (moved.x !== target.x || moved.y !== target.y || moved.gen !== target.gen), 'orb respawned');
+  } finally {
+    await b.leave(); await a.leave();
+    await hub.stop();
+  }
+});
+
 test('orb rounds: host leave mid-round keeps endsAt and scores for the new host', async () => {
   const hub = await startTestHub();
   const opts = (name: string, sub: string) => ({
