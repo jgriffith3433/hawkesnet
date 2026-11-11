@@ -80,12 +80,18 @@ poses both ways (the dot moved by real arrow keys), messages both ways, a move f
 hawkes-net), so a pass means the beta service works end to end. The same file is `example/net-playtest.mjs` in
 hawkesnet-js and hawkesnet-babylon: change all three.
 
-**`bad-network`** (`public/badnet-playtest.mjs`, scenario added from demo.html, shared bot untouched): this page's client gets the
-Network lab at 250 ms and 5% loss on the relay (the room moves there first: a p2p host hears the others off its own channels, not through the shim) for 60 s (after a 2 s warm-up, reported apart as `remoteJumpOnsetPx`), this page's player chases orbs
-by real input (the floating stick by touch at 390x844, arrow keys on a desktop run: Studio's phone twin is the touch leg) and a second
-client does too. Every drawn frame it measures the other player's dot in CSS px: the largest single-frame jump is the metric
-`remoteJumpMaxPx` and fails the run over 40 px (`JUMP_LIMIT_PX`); then the lab goes off and both clients' scores (round, phase, each
-player) must agree within 15 s (`scoreMatch`, `scoreYou`, `scoreOther`). The pure parts run in `test/badnet-playtest.test.ts`.
+**`bad-network`** (`public/badnet-playtest.mjs`, scenario added from demo.html, shared bot untouched): one client is a phone, 390x844 steered
+by touch alone (the floating stick). A phone-sized run (Studio's phone twin) plays it in the page itself; any other run (a page can't resize
+itself, a desktop is 1280x720) opens a visible 390x844 frame of `/demo` in a room of its own and plays the leg through that page's kit
+(`window.hawkesNetBadNet`: its canvas, input layer and Network lab). No phone client (frame won't load, wrong size, no phone layout) or fewer than
+20 touch gestures or any arrow key (`inputs()`, counted by the page's input layer) fails the run: it never passes on arrow keys. That client
+gets the Network lab at 250 ms and 5% loss on the relay (the room moves there first: a p2p host hears the others off its own channels, not through the shim)
+for 60 s (after a 2 s warm-up, reported apart as `remoteJumpOnsetPx`), chases orbs by real touch, and a second client does too. Every drawn frame it
+measures the other player's dot in CSS px: the largest single-frame jump is the metric `remoteJumpMaxPx` and fails the run over 40 px (`JUMP_LIMIT_PX`);
+`remoteJumpNetworkPx` is the same dot before the page keeps dots apart (`nx`, `ny` of the view's items) and each frame over the limit is a
+`bad-network-jump` event (drawn px, network px, round, phase), so a failure says whether the netcode or the dot layout moved it. Then the lab goes off and both
+clients' scores (round, phase, each player) must agree within 15 s (`scoreMatch`, `scoreYou`, `scoreOther`). The pure parts and the leg on fake clients run in
+`test/badnet-playtest.test.ts`.
 
 ## Docs playtest
 

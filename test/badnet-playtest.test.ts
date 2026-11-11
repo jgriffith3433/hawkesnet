@@ -26,6 +26,11 @@ test('the demo wires the bad-network scenario; the shared playtest and the lab s
   assert.match(src, /BAD_LOSS_PCT = 5/);
   assert.match(src, /Scores match on both clients/);
   assert.match(src, /390x844/);
+  assert.match(html, /window\.hawkesNetBadNet = badNetKit/);
+  assert.match(html, /addBadNetworkScenario\(playtest, \{ kit: badNetKit \}\)/);
+  assert.match(html, /inputSeen/);
+  assert.match(html, /nx: it\.nx \?\? it\.x/); // the network position of each dot, before the page keeps dots apart
+  assert.match(src, /openPhoneFrame/);
   assert.doesNotMatch(html, /setInterval\([^)]*fetch/);
 });
 
@@ -109,4 +114,161 @@ test('250 ms and 5% loss on the watching client: the other player\'s drawn dot n
   assert.ok(r.maxPx <= JUMP_LIMIT_PX, `largest jump ${r.maxPx} px`);
   lab.set({ latency: 0, jitter: 0, loss: 0 });
   await mover.leave(); await watcher.leave();
+});
+
+test('a phone viewport is 390x844 (a few px of toolbar allowed); anything else is not', async () => {
+  const { isPhoneViewport } = await import('../public/badnet-playtest.mjs');
+  assert.equal(isPhoneViewport({ w: 390, h: 844 }), true);
+  assert.equal(isPhoneViewport({ w: 390, h: 830 }), true);
+  assert.equal(isPhoneViewport({ w: 1280, h: 720 }), false);
+  assert.equal(isPhoneViewport({ w: 844, h: 390 }), false);
+  assert.equal(isPhoneViewport(null), false);
+});
+
+test('steered by touch: enough stick touches and no key at all; a desktop run on arrow keys does not count', async () => {
+  const { judgeTouchLeg } = await import('../public/badnet-playtest.mjs');
+  assert.equal(judgeTouchLeg({ touch: 240, stick: 240, key: 0, mouse: 0 }).ok, true);
+  assert.equal(judgeTouchLeg({ touch: 0, stick: 0, key: 240 }).ok, false); // the 1280x720 arrow-key run of beta
+  assert.match(judgeTouchLeg({ touch: 0, stick: 0, key: 240 }).why, /arrow key/);
+  assert.equal(judgeTouchLeg({ touch: 240, stick: 240, key: 1 }).ok, false);
+  assert.equal(judgeTouchLeg({ touch: 5, stick: 5 }).ok, false);
+  assert.equal(judgeTouchLeg({ touch: 240, stick: 3 }).ok, false); // touches, but not on the floating stick
+  assert.equal(judgeTouchLeg(undefined).ok, false);
+});
+
+test('jump meter names where its largest jump was', async () => {
+  const { createJumpMeter } = await import('../public/badnet-playtest.mjs');
+  const m = createJumpMeter();
+  m.frame(0, 10, 20); m.frame(16, 13, 20); m.frame(32, 73, 20);
+  assert.deepEqual(m.result().from, [13, 20]);
+  assert.deepEqual(m.result().to, [73, 20]);
+  assert.equal(createJumpMeter().result().from, null);
+});
+
+// ---- badNetworkChecks on fake clients (no page): who plays the leg, and what fails it
+async function harness({ ownViewport, openPhone, snapAt = null, keysOnly = false, legMs = 2400 }: any) {
+  const { badNetworkChecks } = await import('../public/badnet-playtest.mjs');
+  const lines: { text: string; ok: boolean; why: string }[] = [], metrics: Record<string, any> = {}, events: any[] = [];
+  const check = async (text: string, fn: () => Promise<any>) => {
+    const l = { text, ok: false, why: '' }; lines.push(l);
+    try { const w = await fn(); l.ok = true; l.why = String(w ?? ''); } catch (e: any) { l.why = String(e?.message ?? e); }
+    return l.ok;
+  };
+  const until = (test: () => any, ms: number, what: any) => new Promise<number>((res, rej) => {
+    const t0 = performance.now();
+    const tick = () => { let v = false; try { v = test(); } catch { /* not yet */ } if (v) return res(performance.now() - t0); if (performance.now() - t0 > ms) return rej(new Error(`timed out waiting for ${typeof what === 'function' ? what() : what}`)); setTimeout(tick, 10); };
+    tick();
+  });
+  const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  return { badNetworkChecks, lines, metrics, events, check, until, wait, legMs, ownViewport, openPhone, snapAt, keysOnly };
+}
+
+// A client kit with a room, a drawn other player that walks a smooth loop (and snaps once at `snapAt` ms when asked), orbs and a stick.
+function fakeKit({ w = 390, h = 844, phone = true, keysOnly = false, snapAt = null as number | null }) {
+  const t0 = performance.now();
+  const inputs = { touch: 0, stick: 0, key: 0, mouse: 0, pen: 0 };
+  const lab: any = { s: { latency: 0, jitter: 0, loss: 0 }, set(v: any) { this.s = { ...v }; }, get() { return { ...this.s, active: Boolean(this.s.latency || this.s.loss) }; }, close() {} };
+  const bot: any = { id: 'bot', peers: new Map([['me', {}]]), transport: 'relay', pose() {}, async leave() { bot.left = true; } };
+  const main: any = { id: 'me', peers: new Map([['bot', {}]]), transport: 'relay', migrate() {} };
+  const score = (who: string) => Math.floor((performance.now() - t0) / (who === 'me' ? 400 : 500));
+  const orbs = {
+    wire() {}, hostRoundTick() {}, touchAt() { return false; },
+    snapshot() { return { round: 1, phase: 'play', orbs: [{ id: 'o', x: 400, y: 300 }], scores: { me: score('me'), bot: score('bot') } }; },
+  };
+  const view = () => {
+    const t = performance.now() - t0, snap = snapAt !== null && t > snapAt ? 160 : 0;
+    const x = 450 + 400 * Math.sin(t * 0.01) + snap; // 26 px a frame at most, at 390 px wide
+    return { w: 960, h: 600, items: [{ id: 'bot', x, y: 300, nx: x - snap, ny: 300 }] };
+  };
+  return {
+    main: () => main, orbs: () => orbs, lab: () => lab, view, canvas: () => ({ getBoundingClientRect: () => ({ width: 390, height: 244 }) }),
+    openPeer: async () => bot, phone: () => phone, viewport: () => ({ w, h }),
+    raf: (f: any) => setTimeout(() => f(performance.now()), 16),
+    myPos: () => [100, 0, 100],
+    aim: async (_dx: number, _dy: number, ms: number) => { if (keysOnly) inputs.key++; else { inputs.touch++; inputs.stick++; } await new Promise((r) => setTimeout(r, Math.min(ms, 60))); }, // the real aim holds the stick for ms (250); the fake is quicker so a short leg still counts enough touches
+    inputs: () => ({ ...inputs }), untilReady: async () => {}, bot, lab_: lab,
+  };
+}
+
+test('a desktop run opens a 390x844 frame, plays the leg there by touch, and every check passes', async () => {
+  const frame = fakeKit({});
+  let closed = 0, opened = 0;
+  const own = fakeKit({ w: 1280, h: 720, phone: false });
+  const h = await harness({});
+  await h.badNetworkChecks({
+    check: h.check, until: h.until, wait: h.wait, metric: (k: string, v: any) => { h.metrics[k] = v; }, event: (t: string, d: string) => h.events.push({ t, d }),
+    own, openPhone: async () => { opened++; return { kit: frame, close: () => { closed++; } }; }, legMs: 2400,
+  });
+  const failed = h.lines.filter((l) => !l.ok);
+  assert.deepEqual(failed, [], JSON.stringify(failed));
+  assert.equal(opened, 1);
+  assert.equal(closed, 1, 'the frame is closed after the leg');
+  assert.equal(h.metrics.badNetPhone, 1);
+  assert.equal(h.metrics.badNetPhoneFrame, 1);
+  assert.equal(h.metrics.badNetViewport, '390x844');
+  assert.equal(h.metrics.badNetRunnerViewport, '1280x720');
+  assert.ok(h.metrics.badNetTouchGestures >= 20, `${h.metrics.badNetTouchGestures} touches`);
+  assert.equal(h.metrics.badNetKeyPresses, 0);
+  assert.ok(h.metrics.remoteJumpMaxPx > 0 && h.metrics.remoteJumpMaxPx <= 40, `${h.metrics.remoteJumpMaxPx}`);
+  assert.equal(h.metrics.scoreMatch, 1);
+  assert.equal(frame.bot.left, true, 'the second client left');
+  assert.equal(frame.lab_.get().active, false, 'the lab is off again');
+  assert.equal(own.lab_.get().active, false, 'the desktop page\'s own lab was never turned on');
+});
+
+test('a page that is already a phone plays the leg itself, with no frame', async () => {
+  const own = fakeKit({});
+  const h = await harness({});
+  await h.badNetworkChecks({
+    check: h.check, until: h.until, wait: h.wait, metric: (k: string, v: any) => { h.metrics[k] = v; },
+    own, openPhone: async () => { throw new Error('must not open a frame'); }, legMs: 2400,
+  });
+  assert.deepEqual(h.lines.filter((l) => !l.ok), []);
+  assert.equal(h.metrics.badNetPhoneFrame, 0);
+  assert.equal(h.metrics.badNetViewport, '390x844');
+});
+
+test('a jump over 40 px fails the run, and says where; a client steered by keys fails too, even with a smooth dot', async () => {
+  const run = async (opts: { snapAt?: number; keysOnly?: boolean }) => {
+    const h = await harness({});
+    const frame = fakeKit({ snapAt: opts.snapAt ?? null, keysOnly: opts.keysOnly });
+    await h.badNetworkChecks({
+      check: h.check, until: h.until, wait: h.wait, metric: (k: string, v: any) => { h.metrics[k] = v; }, event: (t: string, d: string) => h.events.push({ t, d }),
+      own: fakeKit({ w: 1280, h: 720, phone: false }), openPhone: async () => ({ kit: frame, close() {} }), legMs: 2400,
+    });
+    return h;
+  };
+  const [snap, keys] = await Promise.all([run({ snapAt: 3200 }), run({ keysOnly: true })]);
+  const glide = snap.lines.find((l) => /glides/.test(l.text))!;
+  assert.equal(glide.ok, false);
+  assert.match(glide.why, /jumped [\d.]+ px in one frame/);
+  assert.ok(snap.metrics.remoteJumpMaxPx > 40, `${snap.metrics.remoteJumpMaxPx}`);
+  assert.ok(snap.metrics.remoteJumpNetworkPx <= 40, 'the snap was drawn only: the network position stayed smooth');
+  assert.ok(snap.events.some((e: any) => e.t === 'bad-network-jump'));
+  assert.equal(snap.lines.filter((l) => !l.ok).length, 1, 'only the jump check fails');
+  const touch = keys.lines.find((l) => /steered by touch alone/.test(l.text))!;
+  assert.equal(touch.ok, false);
+  assert.match(touch.why, /arrow key/);
+});
+
+test('no phone client, no pass: a desktop run that cannot open the frame fails at the phone check and plays no leg', async () => {
+  const run = async (own: any, openPhone: any) => {
+    const h = await harness({});
+    await h.badNetworkChecks({ check: h.check, until: h.until, wait: h.wait, metric: (k: string, v: any) => { h.metrics[k] = v; }, own, openPhone, legMs: 2400 });
+    return h;
+  };
+  const noFrame = await run(fakeKit({ w: 1280, h: 720, phone: false }), undefined);
+  assert.equal(noFrame.lines.length, 1);
+  assert.equal(noFrame.lines[0].ok, false);
+  assert.match(noFrame.lines[0].why, /1280x720/);
+  assert.equal(noFrame.metrics.badNetPhone, 0);
+  const brokenFrame = await run(fakeKit({ w: 1280, h: 720, phone: false }), async () => { throw new Error('/demo did not load in a 390x844 frame in 20 s'); });
+  assert.equal(brokenFrame.lines.length, 1);
+  assert.equal(brokenFrame.lines[0].ok, false);
+  const wrongSize = await run(fakeKit({ w: 1280, h: 720, phone: false }), async () => ({ kit: fakeKit({ w: 800, h: 600 }), close() {} }));
+  assert.equal(wrongSize.lines.length, 1);
+  assert.match(wrongSize.lines[0].why, /800x600/);
+  const noStick = await run(fakeKit({ w: 1280, h: 720, phone: false }), async () => ({ kit: fakeKit({ phone: false }), close() {} }));
+  assert.equal(noStick.lines.length, 1);
+  assert.match(noStick.lines[0].why, /phone layout/);
 });
