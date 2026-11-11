@@ -436,6 +436,8 @@
   };
   // `inputNote` is the playtest's (it puts each finished gesture in the run's events: a tap or a drag, with its pointer type and where it went); null otherwise.
   let inputNote = null, gesture = null;
+  // What this page's own input layer has seen, by kind (the bad-network playtest reads it to prove a client was steered by touch).
+  const inputSeen = { touch: 0, stick: 0, mouse: 0, pen: 0, key: 0 };
   const spot = () => `${Math.round(pos.x)},${Math.round(pos.y)}`;
   cv.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
@@ -458,6 +460,8 @@
   const endGesture = (e) => {
     if (stick && (!e || e.pointerId === stick.id)) stick = null;
     if (gesture) {
+      inputSeen[gesture.type] = (inputSeen[gesture.type] || 0) + 1;
+      if (gesture.stick) inputSeen.stick++;
       const kind = gesture.stick ? (gesture.moves ? 'stick-drag' : 'stick') : (gesture.moves ? 'drag' : 'tap');
       inputNote?.(kind, `${gesture.type}: ${gesture.moves} moves, from ${gesture.from} to ${spot()}`);
       gesture = null;
@@ -774,7 +778,7 @@
       if (!pr) { tracks.delete(id); continue; }
       const s = tr.sample();
       if (!s) continue;
-      items.push({ id, me: false, x: s[0], y: s[2], r: 9, color: pr.color || '#888', text: pr.name || id, away: Boolean(pr.away) });
+      items.push({ id, me: false, x: s[0], y: s[2], nx: s[0], ny: s[2], r: 9, color: pr.color || '#888', text: pr.name || id, away: Boolean(pr.away) });
     }
     items.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.id < b.id ? -1 : 1));
     items.forEach(clampXY);
@@ -981,7 +985,7 @@
         board: (game.board || []).map((r) => ({ ...r })),
         confetti: confettiUntil > t,
       } : null,
-      items: items.map((it) => ({ id: it.id, me: it.me, away: Boolean(it.away), alpha: it.away ? 0.4 : 1, x: it.x, y: it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
+      items: items.map((it) => ({ id: it.id, me: it.me, away: Boolean(it.away), alpha: it.away ? 0.4 : 1, x: it.x, y: it.y, nx: it.nx ?? it.x, ny: it.ny ?? it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
       fx: { particles: particles.length, pops: pops.length, pulse: pulseUntil > t, leavers: leavers.length, muted, unlocked: audioUnlocked, confetti: confettiUntil > t },
     };
     requestAnimationFrame(frame);
@@ -1040,7 +1044,7 @@
     }
     cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
   };
-  const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
+  const key = (k, ms) => new Promise((r) => { inputSeen.key++; inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
   // One steering input toward (dx, dy) for `ms`: the floating stick held that way by a touch (phone size), else the arrow keys. The bad-network playtest chases orbs with it.
   const stickAim = async (dx, dy, ms) => {
     const r = cv.getBoundingClientRect(), id = 11, len = Math.hypot(dx, dy) || 1;
@@ -1161,7 +1165,9 @@
     untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
   });
   const { addBadNetworkScenario } = await import('/badnet-playtest.mjs');
-  addBadNetworkScenario(playtest, {
+  // This page as a client of the bad-network leg. A desktop run opens a 390x844 frame of /demo and plays the leg through the
+  // frame's kit (`window.hawkesNetBadNet`); a phone-sized run plays it through its own.
+  const badNetKit = {
     main: () => net,
     openPeer: (name = 'Far player') => openPlaytestPeer(name, `bad-${Math.random()}`),
     orbs: () => window.hawkesNetOrbs,
@@ -1171,8 +1177,13 @@
     aim,
     myPos: () => [pos.x, 0, pos.y],
     phone: () => phoneMode(),
+    viewport: () => ({ w: innerWidth, h: innerHeight }),
+    raf: (f) => requestAnimationFrame(f),
+    inputs: () => ({ ...inputSeen }),
     untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
-  });
+  };
+  window.hawkesNetBadNet = badNetKit;
+  addBadNetworkScenario(playtest, { kit: badNetKit });
   const { addApiScenario } = await import('/api-playtest.mjs');
   addApiScenario(playtest);
   const { addFeedbackScenario } = await import('/feedback-playtest.mjs');
