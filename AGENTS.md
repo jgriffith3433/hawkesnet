@@ -79,3 +79,12 @@ poses both ways (the dot moved by real arrow keys), messages both ways, a move f
 `two-players` is for Studio's peers playtest (real browsers on one `?room=`). Studio plays beta's `/demo` (project
 hawkes-net), so a pass means the beta service works end to end. The same file is `example/net-playtest.mjs` in
 hawkesnet-js and hawkesnet-babylon: change all three.
+
+## Docs playtest
+
+`node tools/docs-playtest.mjs --url https://hawkesnet.hawkesgen.ai --key $HAWKESGEN_KEY` (`npm run docs-playtest`) runs the
+quickstart's JavaScript snippets as written (headless, `@hawkesgen/net` from `sdk/js`) and checks each prints what its step
+says; then follows every link of `/quickstart` and `/docs/api` (this site must answer 200; other hosts must be Hawkes hosts
+or the hawkesnet repositories). It names the snippet or link that fails. Keep the quickstart's step ids (`js-connect`,
+`js-room`, `js-second`, `expect-node-ada/bob`) it reads. `test/docs-playtest.test.ts` runs it on the test service. Phone
+size (390 px) and the quickstart check stay in /demo's `site` scenario.
