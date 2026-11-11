@@ -80,17 +80,27 @@ export function judgeQuickstart(q) {
     if (p.minFont < 12) throw new Error(`the ${t} tab has text as small as ${p.minFont} px (wanted 12 or more)`);
     if (p.wideBlocks) throw new Error(`${p.wideBlocks} code block(s) of the ${t} tab don't scroll inside themselves`);
   });
+  if (q.codeScroll && q.codeScroll.moved < 1) throw new Error(`a code box wider than its ${q.codeScroll.boxWidth} px did not scroll inside itself`);
+  if (q.codeScroll && q.codeScroll.page >= 1) throw new Error(`scrolling a code box made the page ${q.codeScroll.page} px wider`);
   if (q.remembered.afterReload !== q.remembered.chosen) throw new Error(`chose the ${q.remembered.chosen} tab, but the page reopened on ${q.remembered.afterReload}`);
   return `${q.tabs.join(', ')}: 5 steps each with expected output and Copy, no sideways scroll at ${q.panels[0].width} px, reopens on the ${q.remembered.chosen} tab`;
 }
 
-/** Opens the quickstart 390 px wide, goes through each tab, then chooses the last, reloads and reads which tab it opens on (the stored choice is put back after). */
-export async function quickstartReader(path = '/quickstart') {
+/**
+ * Opens the quickstart 390 px wide in a frame ON SCREEN (so the footage shows the page; `visible: false` keeps it off screen), taps each tab
+ * with pointer and click events at the tab's own position, looks at each step's expected output, scrolls a code box sideways (the box
+ * moves, the page doesn't), then chooses the last tab, reloads and reads which tab it opens on (the stored choice is put back after).
+ * `on(type, detail)` reports each of those for the run's events: tab, expect, codescroll, remembered.
+ */
+export async function quickstartReader(path = '/quickstart', { visible = true, on = () => {}, pause = 450 } = {}) {
   const frame = document.createElement('iframe');
   frame.title = 'Hawkes Net quickstart, under playtest';
-  frame.style.cssText = `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:844px;border:0`;
+  frame.style.cssText = visible
+    ? `position:fixed;right:12px;top:48px;width:${PHONE_W}px;height:min(844px,calc(100vh - 60px));border:2px solid #7db1ff;border-radius:10px;background:#0b0d11;z-index:99998`
+    : `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:844px;border:0`;
   frame.src = path;
   const load = () => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(`${path} did not load in 20 s`)), 20000); frame.addEventListener('load', () => { clearTimeout(t); res(); }, { once: true }); });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const first = load();
   document.body.appendChild(frame);
   let before = null, store = null;
@@ -98,12 +108,41 @@ export async function quickstartReader(path = '/quickstart') {
     await first;
     const w = () => frame.contentWindow, d = () => frame.contentDocument;
     try { store = w().localStorage; before = store.getItem(QUICKSTART_KEY); store.removeItem(QUICKSTART_KEY); } catch { /* storage blocked */ }
+    // A tap: pointer events and the click at the middle of the element, as a finger or mouse would send them.
+    const tap = (el) => {
+      el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect(), o = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: w(), pointerId: 5, pointerType: 'touch', isPrimary: true };
+      el.dispatchEvent(new w().PointerEvent('pointerdown', { ...o, buttons: 1 })); el.dispatchEvent(new w().PointerEvent('pointerup', { ...o, buttons: 0 }));
+      el.dispatchEvent(new w().MouseEvent('click', o));
+    };
     const tabs = [...d().querySelectorAll('.tabs [role="tab"]')];
     const panels = [];
+    let scrolled = null;
     for (const tab of tabs) {
-      tab.click();
+      tap(tab);
       const panel = d().getElementById(tab.getAttribute('aria-controls'));
+      const label = tab.textContent.trim();
+      on('tab', `${label} tab chosen, ${panel && !panel.hidden ? 'its panel is showing' : 'its panel did NOT open'}`);
+      await wait(pause);
       const steps = [...panel.querySelectorAll('li.step')];
+      for (const [i, s] of steps.entries()) {
+        const ex = s.querySelector('.expect');
+        if (!ex) { on('expect', `${label} step ${i + 1}: NO expected output`); continue; }
+        ex.scrollIntoView({ block: 'center' });
+        const line = (ex.querySelector('pre, .shot span') || ex).textContent.trim().split('\n')[0].slice(0, 70);
+        on('expect', `${label} step ${i + 1} shows what you should see: ${line}`);
+        if (i === 0 || i === steps.length - 1) await wait(pause / 2);
+      }
+      // A code box that is wider than its box: scroll it by its own scrollLeft and see the page stay put.
+      const wide = [...panel.querySelectorAll('pre')].find((e) => e.scrollWidth > e.clientWidth + 4);
+      if (wide && !scrolled) {
+        wide.scrollIntoView({ block: 'center' });
+        const page0 = d().documentElement.scrollWidth, x0 = wide.scrollLeft;
+        for (let k = 1; k <= 4; k++) { wide.scrollLeft = Math.round((wide.scrollWidth - wide.clientWidth) * k / 4); await wait(120); }
+        scrolled = { moved: wide.scrollLeft - x0, page: d().documentElement.scrollWidth - page0, boxWidth: wide.clientWidth, contentWidth: wide.scrollWidth };
+        on('codescroll', `${label}: a code box scrolled ${scrolled.moved} px inside its own ${scrolled.boxWidth} px box (content ${scrolled.contentWidth} px); the page stayed ${d().documentElement.scrollWidth} px wide (${scrolled.page >= 1 ? 'GREW' : 'no sideways scroll'})`);
+        wide.scrollLeft = 0;
+      }
       let min = 99;
       const walker = d().createTreeWalker(panel, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -120,11 +159,15 @@ export async function quickstartReader(path = '/quickstart') {
       });
     }
     const chosen = tabs.length ? tabs[tabs.length - 1].dataset.tab : '';
+    d().documentElement.scrollTop = 0;
+    on('remembered', `chose the ${chosen} tab, reloading the quickstart`);
     const again = load();
     frame.contentWindow.location.reload();
     await again;
     const afterReload = d().querySelector('.tabs [aria-selected="true"]')?.dataset.tab ?? '';
-    return { tabs: tabs.map((t) => t.textContent.trim()), panels, remembered: { chosen, afterReload } };
+    on('remembered', `after the reload the page opened on the ${afterReload} tab (${afterReload === chosen ? 'the one chosen' : 'NOT the one chosen'})`);
+    await wait(pause * 2);
+    return { tabs: tabs.map((t) => t.textContent.trim()), panels, remembered: { chosen, afterReload }, codeScroll: scrolled };
   } finally {
     try { if (before === null) store?.removeItem(QUICKSTART_KEY); else store?.setItem(QUICKSTART_KEY, before); } catch { /* ignore */ }
     frame.remove();
@@ -186,7 +229,7 @@ export async function frameReader(path, { origin = location.origin } = {}) {
  * The checks, as named checks of the playtest that runs them: `check(name, fn)` and `metric(key, value)` are the playtest's.
  * `fetchFn` is fetch, `read(path)` is frameReader (both replaced in tests), `log` and `progress` are optional.
  */
-export async function siteChecks({ check, metric, log = () => {}, progress = () => {}, note = () => {}, origin = location.origin,
+export async function siteChecks({ check, metric, log = () => {}, progress = () => {}, note = () => {}, on = () => {}, origin = location.origin,
   fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader, quickRead = quickstartReader }) {
   await check('Status and version: the service is ok or degraded and has a version', async () => {
     const res = await fetchFn(`${origin}/v1/net/status`);
@@ -241,9 +284,10 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
     progress(0.7 + 0.3 * (++j / PHONE_PAGES.length));
   }
   await check('Quickstart (/quickstart): JS, Babylon and Unity tabs with five steps each, expected output and Copy on every step, the chosen tab remembered, nothing sideways at 390 px', async () => {
-    const q = await quickRead('/quickstart');
+    const q = await quickRead('/quickstart', { on: (type, detail) => on(type, detail) });
     const why = judgeQuickstart(q);
     metric('quickstartTabs', q.tabs.length); metric('quickstartSteps', q.panels.reduce((n, p) => n + p.steps, 0));
+    if (q.codeScroll) { metric('quickstartCodeScrolled', q.codeScroll.moved); metric('quickstartCodeScrollPageGrowth', Math.max(0, q.codeScroll.page)); }
     metric('quickstartOverflow', Math.max(0, ...q.panels.map((p) => p.scrollWidth - p.width)));
     return why;
   });
@@ -255,8 +299,8 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
  * for it while it is the current run. Every other id goes to the original start.
  */
 export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, quickRead, where = location.host } = {}) {
-  const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block', seconds: 40, tags: ['smoke', 'site'],
-    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
+  const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block', seconds: 60, tags: ['smoke', 'site'],
+    description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide, and shows the quickstart on screen at 390 px: taps its JavaScript, Babylon.js and Unity tabs, shows the expected output of each step, scrolls a code box inside its own box, and reloads to see the last tab reopen (events: tab, expect, codescroll, remembered). Phone checks: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
   let run = null;
   const r1 = (n) => Math.round(n * 10) / 10;
@@ -304,7 +348,7 @@ export function addSiteScenario(api, { origin = location.origin, fetchFn, read, 
     const me = run;
     event('start', 'site'); event('scene', 'Demo'); show();
     try {
-      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, quickRead, note: (s) => { me.note = s; },
+      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, quickRead, note: (s) => { me.note = s; }, on: (type, detail) => event(type, detail),
         log: (l) => { me.log.push(`${r1(now())}s ${l}`); if (me.log.length > 300) me.log.shift(); },
         progress: (p) => { me.state.progress = Math.max(0, Math.min(1, p)); me.moved = performance.now(); } });
       if (typeof location !== 'undefined' && location.origin !== origin) problem('the bot left the Hawkes Net site');

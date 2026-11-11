@@ -188,3 +188,10 @@ test('judgeQuickstart: three tabs of five steps with output and Copy, no sideway
   assert.throws(bad((q) => { q.panels[0].wideBlocks = 1; }), /scroll inside/);
   assert.throws(bad((q) => { q.remembered.afterReload = 'js'; }), /reopened on js/);
 });
+
+test('judgeQuickstart: a code box must scroll inside itself and leave the page the same width', () => {
+  const q = (cs: unknown) => ({ ...JSON.parse(JSON.stringify(GOOD_QUICK)), codeScroll: cs });
+  assert.match(m.judgeQuickstart(q({ moved: 120, page: 0, boxWidth: 330, contentWidth: 450 })), /reopens on/);
+  assert.throws(() => m.judgeQuickstart(q({ moved: 0, page: 0, boxWidth: 330, contentWidth: 450 })), /did not scroll inside itself/);
+  assert.throws(() => m.judgeQuickstart(q({ moved: 90, page: 40, boxWidth: 330, contentWidth: 450 })), /page 40 px wider/);
+});
