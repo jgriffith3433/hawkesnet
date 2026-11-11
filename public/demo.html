@@ -1041,6 +1041,23 @@
     cv.dispatchEvent(new PointerEvent('pointerup', { ...at(path[path.length - 1]), button: 0, buttons: 0 }));
   };
   const key = (k, ms) => new Promise((r) => { inputNote?.('key', `${k} held ${ms} ms`); dispatchEvent(new KeyboardEvent('keydown', { key: k })); setTimeout(() => { dispatchEvent(new KeyboardEvent('keyup', { key: k })); r(); }, ms); });
+  // One steering input toward (dx, dy) for `ms`: the floating stick held that way by a touch (phone size), else the arrow keys. The bad-network playtest chases orbs with it.
+  const stickAim = async (dx, dy, ms) => {
+    const r = cv.getBoundingClientRect(), id = 11, len = Math.hypot(dx, dy) || 1;
+    const at = (u, v) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height, pointerId: id, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true });
+    const tip = [0.5 + (dx / len) * STICK_R * 1.2 / W, 0.72 + (dy / len) * STICK_R * 1.2 / H];
+    cv.dispatchEvent(new PointerEvent('pointerdown', { ...at(0.5, 0.72), button: 0, buttons: 1 }));
+    cv.dispatchEvent(new PointerEvent('pointermove', { ...at(...tip), buttons: 1 }));
+    await new Promise((res) => setTimeout(res, ms));
+    cv.dispatchEvent(new PointerEvent('pointerup', { ...at(...tip), button: 0, buttons: 0 }));
+  };
+  const aim = async (dx, dy, ms) => {
+    if (phone()) return stickAim(dx, dy, ms);
+    const held = [];
+    if (Math.abs(dx) > 12) held.push(key(dx < 0 ? 'ArrowLeft' : 'ArrowRight', ms));
+    if (Math.abs(dy) > 12) held.push(key(dy < 0 ? 'ArrowUp' : 'ArrowDown', ms));
+    await (held.length ? Promise.all(held) : new Promise((res) => setTimeout(res, ms)));
+  };
   // Hawkes Studio's playtest bot: a second player in this page (smoke), or real browsers on one ?room= (two-players).
   // On p2p the smoke also moves the room to the relay and checks again.
   const { orbChecks, roundChecks } = await import('/orbs-playtest.mjs');
@@ -1130,6 +1147,19 @@
     stickDrag,
     phone: () => phoneMode(),
     canvas: () => cv,
+    untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
+  });
+  const { addBadNetworkScenario } = await import('/badnet-playtest.mjs');
+  addBadNetworkScenario(playtest, {
+    main: () => net,
+    openPeer: (name = 'Far player') => openPlaytestPeer(name, `bad-${Math.random()}`),
+    orbs: () => window.hawkesNetOrbs,
+    lab: () => lab,
+    view: () => window.hawkesNetDemoView,
+    canvas: () => cv,
+    aim,
+    myPos: () => [pos.x, 0, pos.y],
+    phone: () => phoneMode(),
     untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
   });
   const { addApiScenario } = await import('/api-playtest.mjs');
