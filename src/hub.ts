@@ -229,6 +229,10 @@ export async function startHub(o: HubOptions = {}) {
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(errorBody('not_found')));
   });
+  // Track every TCP socket (including ones later upgraded to websockets). closeAllConnections alone can leave
+  // upgraded sockets open; a test process then never exits and the box's 15-minute suite times out.
+  const socks = new Set<import('node:net').Socket>();
+  server.on('connection', (c) => { socks.add(c); c.on('close', () => socks.delete(c)); });
   server.on('upgrade', (req, socket, head) => {
     const route = new URL(req.url ?? '/', 'http://x').pathname;
     if (route !== '/v1/net/ws' && route !== '/v3') return refuse(socket, 'not_found');
@@ -247,8 +251,9 @@ export async function startHub(o: HubOptions = {}) {
     projects.stopSampler();
     // Push the draining notice *before* closing sockets, so clients skip the doomed resume and rejoin at once.
     await svc.stopNode();
-    server.close();
     server.closeAllConnections();
+    for (const c of socks) try { c.destroy(); } catch { /* already gone */ }
+    await new Promise<void>((r) => server.close(() => r()));
     await flushUsage().catch(() => {});
   })());
   return { server, port, url: `http://127.0.0.1:${port}`, node, stop, usageWaiting: () => outbox.length };
