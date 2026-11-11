@@ -185,6 +185,7 @@ export class Rooms {
       room.host = low ? low.id : peer.id;
       this.control(peer, { t: 'hello', mode: 'p2p', you: peer.id, name: peer.name, color: peer.color, host: room.host, peers: this.peerList(room), now, epoch: room.epoch, resume, resumed, cfg: room.cfg, project: room.project, room: room.name }, true);
       if (!resumed) this.toOthers(room, peer.id, { c: 'peer', ev: 'join', peer: this.info(peer) });
+      else this.toOthers(room, peer.id, { c: 'peer', ev: 'away', peer: this.info(peer), on: false });
       if (room.host !== was) this.toAll(room, { c: 'host', host: room.host, previous: was });
     }
     room.peak = Math.max(room.peak, this.present(room));
@@ -201,6 +202,7 @@ export class Rooms {
     if (old && old !== c) { c.out.rel.push(...old.out.rel.slice(-4000)); }
     peer.conn = c;
     core.join(room.core, c, now, { resume, hello: { mode: 'relay', resumed, cfg: room.cfg, project: room.project, room: room.name, ...extra } });
+    if (resumed && c.away) core.setAway(room.core, c, false); // back from a drop (the page says again if it is hidden)
   }
 
   // ------------------------------------------------------------------ messages
@@ -291,8 +293,9 @@ export class Rooms {
     if (peer.ws !== ws) return;
     peer.ws = null;
     // Relay: their connection stops being flushed, so what is said meanwhile waits for them (joinCore hands it over).
-    if (room.mode === 'relay' && peer.conn) peer.conn.slow = true;
+    if (room.mode === 'relay' && peer.conn) { peer.conn.slow = true; core.setAway(room.core, peer.conn, true); } // others see it ghosted, not gone
     // Kept a moment: a phone that locked or a network that blinked comes back with its resume token.
+    if (room.mode === 'p2p') this.toOthers(room, peer.id, { c: 'peer', ev: 'away', peer: this.info(peer), on: true });
     peer.away = setTimeout(() => this.leave(room, peer, 'timeout'), GRACE_MS);
     peer.away.unref?.();
     if (room.mode === 'p2p' && room.host === peer.id) {
