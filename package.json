@@ -13,7 +13,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.ts\"",
     "typecheck": "tsc -p .",
     "build": "node tools/build.mjs",
-    "load": "node tools/net-load.mjs"
+    "load": "node tools/net-load.mjs",
+    "docs-playtest": "node tools/docs-playtest.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
