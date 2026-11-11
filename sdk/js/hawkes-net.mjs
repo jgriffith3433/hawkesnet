@@ -816,6 +816,7 @@ class Room {
       case 'pong': return this._pong(m.at, m.now);
       case 'peer': {
         if (m.ev === 'join') { this._addPeer(m.peer); if (this.p2p?.hostRoom) this._hostAddPeer(m.peer); }
+        else if (m.ev === 'away') { const pr = this.peers.get(m.peer.c); if (pr && pr.away !== Boolean(m.on)) { pr.away = Boolean(m.on); this.ev.emit('peer:away', { peer: pr, away: pr.away }); } }
         else if (m.ev === 'leave') { if (this.p2p?.hostRoom) this._hostDropPeer(m.peer.c); this._dropPeer(m.peer.c, m.why || 'left'); }
         return;
       }

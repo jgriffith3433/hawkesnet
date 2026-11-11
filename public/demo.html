@@ -40,6 +40,7 @@
   #banner { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 20; max-width: min(520px, calc(100% - 24px)); padding: 8px 16px; border-radius: 999px; background: rgba(11,15,20,.92); border: 1px solid var(--bc, #a7afbb); text-align: center; line-height: 1.4; display: none; }
   #banner[data-state=connecting], #banner[data-state=reconnecting] { display: block; --bc: #fbbf24; }
   #banner[data-state=online] { display: none; }
+  #banner[data-state=back] { display: block; --bc: #4ade80; }
   #banner b { color: var(--bc, #a7afbb); }
   #banner small { display: block; color: var(--muted); }
   @media (max-width: 640px) {
@@ -381,15 +382,21 @@
   // Connection banner: only from SDK status events (no timers). Playtests read bannerLog / banner().
   const bannerEl = $('banner');
   const bannerLog = [];
+  let wasDown = false, backT = 0;
+  const isDown = () => net?.status === 'reconnecting';
   const bannerWords = {
     connecting: ['Connecting…', 'Reaching Hawkes Net.'],
-    reconnecting: ['Connection lost. Reconnecting…', 'The room keeps its name. You land back with a fresh ticket.'],
+    reconnecting: ['Reconnecting…', 'Hold on, your place in the room is kept.'],
+    back: ['Back in the room', ''],
     online: ['Connected', ''],
     closed: ['Disconnected', 'Refresh to join again.'],
   };
   const renderBanner = (why = '') => {
     if (!bannerEl) return;
-    const status = net?.status || (joinInfo.failed ? 'closed' : 'connecting');
+    let status = net?.status || (joinInfo.failed ? 'closed' : 'connecting');
+    if (status === 'reconnecting') wasDown = true;
+    else if (status === 'online' && wasDown) { wasDown = false; status = 'back'; clearTimeout(backT); backT = setTimeout(() => renderBanner('settled'), 2000); } // one-shot: show 'Back in the room' for 2 s
+    else if (status === 'online' && bannerEl.dataset.state === 'back' && why !== 'settled') status = 'back';
     const [head, detail] = bannerWords[status] || [status, ''];
     const text = detail ? `${head} ${detail}` : head;
     if (bannerEl.dataset.state === status && bannerEl.textContent === text) return;
@@ -670,7 +677,7 @@
       if (!pr) { tracks.delete(id); continue; }
       const s = tr.sample();
       if (!s) continue;
-      items.push({ id, me: false, x: s[0], y: s[2], r: 9, color: pr.color || '#888', text: pr.name || id });
+      items.push({ id, me: false, x: s[0], y: s[2], r: 9, color: pr.color || '#888', text: pr.name || id, away: Boolean(pr.away) });
     }
     items.sort((a, b) => (a.me ? -1 : b.me ? 1 : a.id < b.id ? -1 : 1));
     items.forEach(clampXY);
@@ -743,10 +750,10 @@
     if (t - lastPanel >= 500) { lastPanel = t; refreshPanel(); }
     if (!net) return drawJoining();
     hostRoundTick(net);
-    const sp = 260 * dt;
-    if (keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
+    const sp = isDown() ? 0 : 260 * dt;
+    if (!isDown() && keys.has('ArrowLeft')) pos.x -= sp; if (keys.has('ArrowRight')) pos.x += sp; if (keys.has('ArrowUp')) pos.y -= sp; if (keys.has('ArrowDown')) pos.y += sp;
     const sn = stickNorm();
-    if (sn.mag > 0) { pos.x += sn.x * STICK_SPEED * dt; pos.y += sn.y * STICK_SPEED * dt; }
+    if (!isDown() && sn.mag > 0) { pos.x += sn.x * STICK_SPEED * dt; pos.y += sn.y * STICK_SPEED * dt; }
     pos.x = Math.max(15, Math.min(W - 15, pos.x)); pos.y = Math.max(15, Math.min(H - 15, pos.y));
     net.pose([pos.x, 0, pos.y], 0);
     touchAt(net, pos.x, pos.y); // event-driven collect: only when this player is on an orb
@@ -789,6 +796,7 @@
         ring = 1 - u; alpha = Math.min(1, 0.35 + 0.65 * u);
       }
       if (winId && it.id === winId) scale *= 1.35 + 0.1 * Math.sin(t / 140);
+      if (it.away) alpha *= 0.4;
       g.globalAlpha = alpha;
       if (ring > 0) {
         g.beginPath(); g.arc(it.x, it.y, it.r * (1.6 + 1.8 * (1 - ring)), 0, 7);
@@ -800,7 +808,7 @@
       }
       g.fillStyle = it.color; g.beginPath(); g.arc(it.x, it.y, it.r * scale, 0, 7); g.fill();
       if (it.me) { g.strokeStyle = ink; g.lineWidth = 2; g.stroke(); }
-      if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); }
+      if (it.label) { g.fillStyle = ink; g.fillText(it.text, it.label.x, it.label.base); if (it.away) { g.font = '11px Inter, system-ui, sans-serif'; g.fillText('away', it.label.x, it.label.base + 12); g.font = '13px Inter, system-ui, sans-serif'; } }
       g.globalAlpha = 1;
     }
     // Round clock + score in the safe area (phone); result titles — upright canvas text after dots.
@@ -876,7 +884,7 @@
         board: (game.board || []).map((r) => ({ ...r })),
         confetti: confettiUntil > t,
       } : null,
-      items: items.map((it) => ({ id: it.id, me: it.me, x: it.x, y: it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
+      items: items.map((it) => ({ id: it.id, me: it.me, away: Boolean(it.away), alpha: it.away ? 0.4 : 1, x: it.x, y: it.y, r: it.r, joining: peerIn.has(it.id), label: it.label && { x: it.label.x - it.label.w / 2, y: it.label.top, w: it.label.w, h: it.label.h, text: it.text } })),
       fx: { particles: particles.length, pops: pops.length, pulse: pulseUntil > t, leavers: leavers.length, muted, unlocked: audioUnlocked, confetti: confettiUntil > t },
     };
     requestAnimationFrame(frame);
@@ -898,7 +906,7 @@
     for (const p of [...net.peers.values()].sort((a, b) => a.ord - b.ord)) {
       const li = document.createElement('li');
       li.innerHTML = `<span class="dot" style="background:${p.color || '#888'}"></span><span style="flex:1"></span><span class="pill"></span><span class="pill" title="orb score"></span>`;
-      li.children[1].textContent = p.name || p.id;
+      li.children[1].textContent = (p.name || p.id) + (p.away ? ' (away)' : '');
       li.children[2].textContent = net.transport === 'relay' ? 'relay' : p.id === net.host ? 'host' : net.isHost ? (p.route === 'direct' ? 'linked' : 'signal') : p.route; // 'linked' only once the WebRTC channel is open
       li.children[3].textContent = `${scores[p.id] || 0}`;
       $('peers').appendChild(li);
@@ -976,6 +984,18 @@
         await c.until(() => bot && c.main.peers.has(bot.id), 15000, 'the orb collector bot to join');
         await orbChecks({ check: c.check, main: c.main, collector: bot, until: c.until, wait: c.wait, metric: c.metric,
           openLate: () => openPlaytestPeer('Late joiner', `late-${Math.random()}`), event: c.event || (() => {}) });
+        await c.check('A drop shows Reconnecting, then Back in the room', async () => {
+          dropFor(c.main, 4000);
+          await c.until(() => window.hawkesNetBanner().state === 'reconnecting', 1000, 'the Reconnecting banner within 1 s');
+          await c.until(() => window.hawkesNetBanner().state === 'back', 20000, 'Back in the room');
+          return 'banner showed Reconnecting, then Back in the room';
+        });
+        await c.check('A peer that drops stays ghosted with "away", then returns', async () => {
+          dropFor(bot, 5000);
+          await c.until(() => window.hawkesNetDemoView.items.some((i) => i.id === bot.id && i.away && i.alpha < 0.5), 4000, 'the other player ghosted');
+          await c.until(() => window.hawkesNetDemoView.items.some((i) => i.id === bot.id && !i.away), 25000, 'the other player normal again');
+          return 'ghosted, then normal';
+        });
         await roundChecks({
           check: c.check, main: c.main, other: bot, until: c.until, wait: c.wait, metric: c.metric,
           event: c.event || (() => {}), openInRoom,
@@ -983,6 +1003,14 @@
       } finally { try { await bot?.leave(); } catch { /* gone */ } }
     },
   });
+  // Test hook: close the socket and refuse reconnects for `ms` (the SDK's own backoff then brings it back).
+  const dropFor = (room, ms) => {
+    const real = room._connect, until = performance.now() + ms;
+    room._connect = function (q) { if (performance.now() < until) return this._lost(1006, 'blocked by dropFor'); room._connect = real; return real.call(this, q); };
+    try { room.ws?.close(); } catch { /* already down */ }
+  };
+  playtest.dropFor = (ms = 5000, who = 'me') => dropFor(who === 'me' ? net : who, ms);
+  window.hawkesPlaytest.dropFor = playtest.dropFor;
   addSiteScenario(playtest);
   const { addApiScenario } = await import('/api-playtest.mjs');
   addApiScenario(playtest);

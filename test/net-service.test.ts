@@ -696,3 +696,20 @@ test('direct links: ICE failing moves the room to the relay at once, not after t
     assert.match(b.linkFailure || '', /ICE failed/);
   } finally { await b.leave(); await a.leave(); }
 });
+
+for (const transport of ['relay', 'auto'] as const) {
+  test(`a dropped connection shows as away to the others, and back when it resumes (${transport})`, async () => {
+    const room = `drop-away-${transport}`;
+    const a = await join(room, opts({ name: 'Ada', transport, config: { p2pMax: 4, maxPlayers: 8 } }));
+    const b = await join(room, opts({ name: 'Bo', transport, config: { p2pMax: 4, maxPlayers: 8 } }));
+    try {
+      await wait(() => a.peers.size === 1 && b.peers.size === 1, 6000, 'two in the room');
+      const seen: any[] = [];
+      a.when('peer:away', (e: any) => seen.push(e.away));
+      (b as any).ws.close();
+      await wait(() => seen[0] === true, 3000, 'A sees B ghosted');
+      await wait(() => seen[1] === false, 10000, 'A sees B back');
+      assert.equal(a.peers.has(b.id), true);
+    } finally { await a.leave(); await b.leave(); }
+  });
+}
