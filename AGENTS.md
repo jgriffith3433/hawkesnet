@@ -101,4 +101,4 @@ says; then follows every link of `/quickstart` and `/docs/api` (this site must a
 or the hawkesnet repositories). It names the snippet or link that fails. Keep the quickstart's step ids (`js-connect`,
 `js-room`, `js-second`, `expect-node-ada/bob`) it reads. Shared parse/judge helpers live in `public/docs-snippets.mjs`.
 `test/docs-playtest.test.ts` runs it on the test service. Phone size (390 px), the quickstart tabs check, a named broken-link
-proof, and a live Ada/Bob join of the same JS steps (events: `snippet`) stay in /demo's `site` scenario.
+proof, and a live Ada/Bob join of the same JS steps (events: `snippet-run`, `snippet-out`, `snippet-expect`, `snippet`) stay in /demo's `site` scenario, which plays the docs criteria first and takes `at`: `docs`, `snippets`, `links`, `phone`.
