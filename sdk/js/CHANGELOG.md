@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.7
+
+- **Faster return after a drop:** reconnect tries come every 0.3 s doubling to a steady 1.2 s (with a little jitter) for the 15 s grace, instead of 0.5 s doubling to 8 s, so a player whose network is cut for 5 s is back within ~1.5 s of it returning, with the same id, name, colour and place (resume), and others never see a leave and a join.
+
 ## 1.4.6
 
 - **Draining notice:** when the service restarts it pushes a `draining` notice to every client before closing; the SDK skips the doomed resume and rejoins its room at once with a fresh ticket, under the same room name. No polling.

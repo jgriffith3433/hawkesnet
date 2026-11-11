@@ -332,7 +332,7 @@ What the SDK promises, on every transport:
 3. **A shared clock.** Pings to the room's centre (the relay, or the host in p2p), the quickest of the last ten
    round trips (the portal's rule). It is *the room's* clock: when the room moves from the host to the relay, the
    relay adopts the host's clock reading, so the clock does not jump.
-4. **Reconnect.** A dropped socket or link retries with back-off (1 s doubling to 15 s); `Hello.resume` (a token,
+4. **Reconnect.** A dropped socket or link retries with back-off (0.3 s doubling to a steady 1.2 s for the 15 s grace, then 2 s doubling to 15 s); `Hello.resume` (a token,
    valid 30 s) gives the connection its place back with ownership, and only reliable messages newer than
    `lastSeq` are resent. After 30 s it is a fresh join (new ticket, same `sub`, same peer id when still free).
 5. **Leave properly.** `pagehide` sends a `bye` on every route (data channels, signal route, socket) and closes. A tab

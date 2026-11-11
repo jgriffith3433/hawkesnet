@@ -23,11 +23,11 @@
  */
 export const PROTOCOL = 3;
 /**
- * Core and SDK version string (`'1.4.6'`), kept in lockstep across `package.json`, `sdk/js/package.json`, and the core.
+ * Core and SDK version string (`'1.4.7'`), kept in lockstep across `package.json`, `sdk/js/package.json`, and the core.
  * @sig const VERSION: string
  * @example import { VERSION } from '@hawkesgen/net/core'; console.log(VERSION);
  */
-export const VERSION = '1.4.6';
+export const VERSION = '1.4.7';
 
 /**
  * Default per-room and per-connection caps (`playersPerRoom`, `downBytesPerSec`, `upBytesPerSec`, `msgsPerSec`, `innerPerSec`, `messageBytes`, `ents`, `states`).
