@@ -119,6 +119,8 @@ export async function startHub(o: HubOptions = {}) {
   const phonePlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'phone-playtest.mjs');
   const drainPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'drain-playtest.mjs');
   const apiPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'api-playtest.mjs');
+  const labPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'lab-playtest.mjs');
+  const demoLab = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'demo-lab.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
@@ -204,6 +206,14 @@ export async function startHub(o: HubOptions = {}) {
     if (route === '/api-playtest.mjs') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
       return void res.end(fs.readFileSync(apiPlaytest));
+    }
+    if (route === '/lab-playtest.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(labPlaytest));
+    }
+    if (route === '/demo-lab.mjs') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
+      return void res.end(fs.readFileSync(demoLab));
     }
     if (route.startsWith('/v1/net/') || route.startsWith('/sdk/')) return void api.handleNet(req, res, route);
     res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
