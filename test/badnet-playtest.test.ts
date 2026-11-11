@@ -89,31 +89,44 @@ test('250 ms and 5% loss on the watching client: the other player\'s drawn dot n
   const opts = { project: 'netdemo', endpoint: hub.endpoint, transport: 'relay' as const, log: false, leaveOnHide: false };
   const room = `bad-${Math.random().toString(36).slice(2, 7)}`;
   const lab = createLab();
-  const watcher = await join(room, { ...opts, name: 'Watcher', sub: 'bad-w' });
-  lab.attach(watcher);
-  const mover = await join(room, { ...opts, name: 'Mover', sub: 'bad-m' });
-  await new Promise<void>((res) => { const t = setInterval(() => { if (watcher.peers.has(mover.id) && mover.peers.has(watcher.id)) { clearInterval(t); res(); } }, 20); });
-  const track = watcher.sync.track({ pos: [0, 1, 2] });
-  watcher.onPose((id: string, s: any, at: number) => { if (id === mover.id) track.push(at, [s.p[0], s.p[1], s.p[2]], id); });
-  // The mover walks a loop at the demo's top speed (260 units a second), a pose every 33 ms like the demo's frame loop.
-  let x = 200, y = 300, a = 0;
-  const walk = setInterval(() => { a += 0.02; x += Math.cos(a) * 260 * 0.033; y += Math.sin(a) * 260 * 0.033; mover.pose([x, 0, y], 0); }, 33);
-  await new Promise((r) => setTimeout(r, 800));
-  lab.set({ latency: BAD_LATENCY_MS, jitter: 0, loss: BAD_LOSS_PCT });
-  const meter = createJumpMeter(), onset = createJumpMeter();
-  let warm = true;
-  const frames = setInterval(() => { const s = track.sample(), m = warm ? onset : meter; if (s) m.frame(performance.now(), s[0], s[2]); else m.gap(); }, 16);
-  await new Promise((r) => setTimeout(r, WARMUP_MS));
-  warm = false; meter.gap();
-  await new Promise((r) => setTimeout(r, 12_000));
-  clearInterval(frames); clearInterval(walk);
-  const r = meter.result();
-  console.log('bad-network jump (node, 12 s):', JSON.stringify(r), 'onset', JSON.stringify(onset.result()));
-  assert.ok(r.frames > 400, `${r.frames} frames`);
-  assert.ok(r.travelPx > 800, `travelled ${r.travelPx}`);
-  assert.ok(r.maxPx <= JUMP_LIMIT_PX, `largest jump ${r.maxPx} px`);
-  lab.set({ latency: 0, jitter: 0, loss: 0 });
-  await mover.leave(); await watcher.leave();
+  let watcher: any, mover: any, walk: ReturnType<typeof setInterval> | null = null, frames: ReturnType<typeof setInterval> | null = null;
+  try {
+    watcher = await join(room, { ...opts, name: 'Watcher', sub: 'bad-w' });
+    lab.attach(watcher);
+    mover = await join(room, { ...opts, name: 'Mover', sub: 'bad-m' });
+    await new Promise<void>((res, rej) => {
+      const t0 = Date.now();
+      const t = setInterval(() => {
+        if (watcher.peers.has(mover.id) && mover.peers.has(watcher.id)) { clearInterval(t); res(); }
+        else if (Date.now() - t0 > 8000) { clearInterval(t); rej(new Error('peers did not meet')); }
+      }, 20);
+    });
+    const track = watcher.sync.track({ pos: [0, 1, 2] });
+    watcher.onPose((id: string, s: any, at: number) => { if (id === mover.id) track.push(at, [s.p[0], s.p[1], s.p[2]], id); });
+    // The mover walks a loop at the demo's top speed (260 units a second), a pose every 33 ms like the demo's frame loop.
+    let x = 200, y = 300, a = 0;
+    walk = setInterval(() => { a += 0.02; x += Math.cos(a) * 260 * 0.033; y += Math.sin(a) * 260 * 0.033; mover.pose([x, 0, y], 0); }, 33);
+    await new Promise((r) => setTimeout(r, 800));
+    lab.set({ latency: BAD_LATENCY_MS, jitter: 0, loss: BAD_LOSS_PCT });
+    const meter = createJumpMeter(), onset = createJumpMeter();
+    let warm = true;
+    frames = setInterval(() => { const s = track.sample(), m = warm ? onset : meter; if (s) m.frame(performance.now(), s[0], s[2]); else m.gap(); }, 16);
+    await new Promise((r) => setTimeout(r, WARMUP_MS));
+    warm = false; meter.gap();
+    await new Promise((r) => setTimeout(r, 12_000));
+    if (frames) clearInterval(frames); frames = null;
+    if (walk) clearInterval(walk); walk = null;
+    const r = meter.result();
+    console.log('bad-network jump (node, 12 s):', JSON.stringify(r), 'onset', JSON.stringify(onset.result()));
+    assert.ok(r.frames > 400, `${r.frames} frames`);
+    assert.ok(r.travelPx > 800, `travelled ${r.travelPx}`);
+    assert.ok(r.maxPx <= JUMP_LIMIT_PX, `largest jump ${r.maxPx} px`);
+    lab.set({ latency: 0, jitter: 0, loss: 0 });
+  } finally {
+    if (frames) clearInterval(frames);
+    if (walk) clearInterval(walk);
+    await Promise.all([mover?.leave?.(), watcher?.leave?.()].filter(Boolean));
+  }
 });
 
 test('a phone viewport is 390x844 (a few px of toolbar allowed); anything else is not', async () => {
@@ -164,8 +177,10 @@ async function harness({ ownViewport, openPhone, snapAt = null, keysOnly = false
 }
 
 // A client kit with a room, a drawn other player that walks a smooth loop (and snaps once at `snapAt` ms when asked), orbs and a stick.
+// Motion and raf use a synthetic 16 ms clock so a busy box (setTimeout late) cannot turn a smooth sine into a >40 px jump.
 function fakeKit({ w = 390, h = 844, phone = true, keysOnly = false, snapAt = null as number | null }) {
   const t0 = performance.now();
+  let clock = 0, frameI = 0;
   const inputs = { touch: 0, stick: 0, key: 0, mouse: 0, pen: 0 };
   const lab: any = { s: { latency: 0, jitter: 0, loss: 0 }, set(v: any) { this.s = { ...v }; }, get() { return { ...this.s, active: Boolean(this.s.latency || this.s.loss) }; }, close() {} };
   const bot: any = { id: 'bot', peers: new Map([['me', {}]]), transport: 'relay', pose() {}, async leave() { bot.left = true; } };
@@ -176,14 +191,16 @@ function fakeKit({ w = 390, h = 844, phone = true, keysOnly = false, snapAt = nu
     snapshot() { return { round: 1, phase: 'play', orbs: [{ id: 'o', x: 400, y: 300 }], scores: { me: score('me'), bot: score('bot') } }; },
   };
   const view = () => {
-    const t = performance.now() - t0, snap = snapAt !== null && t > snapAt ? 160 : 0;
+    // Sine advances one step per drawn frame (not wall time), so a late setTimeout cannot invent a >40 px jump.
+    // snapAt stays wall-clock so the "failing jump" case still fires during the measured leg (after the 2 s warm-up).
+    const t = frameI * 16, snap = snapAt !== null && (performance.now() - t0) > snapAt ? 160 : 0;
     const x = 450 + 400 * Math.sin(t * 0.01) + snap; // 26 px a frame at most, at 390 px wide
     return { w: 960, h: 600, items: [{ id: 'bot', x, y: 300, nx: x - snap, ny: 300 }] };
   };
   return {
     main: () => main, orbs: () => orbs, lab: () => lab, view, canvas: () => ({ getBoundingClientRect: () => ({ width: 390, height: 244 }) }),
     openPeer: async () => bot, phone: () => phone, viewport: () => ({ w, h }),
-    raf: (f: any) => setTimeout(() => f(performance.now()), 16),
+    raf: (f: any) => { setTimeout(() => { frameI++; clock += 16; f(clock); }, 16); },
     myPos: () => [100, 0, 100],
     aim: async (_dx: number, _dy: number, ms: number) => { if (keysOnly) inputs.key++; else { inputs.touch++; inputs.stick++; } await new Promise((r) => setTimeout(r, Math.min(ms, 60))); }, // the real aim holds the stick for ms (250); the fake is quicker so a short leg still counts enough touches
     inputs: () => ({ ...inputs }), untilReady: async () => {}, bot, lab_: lab,
