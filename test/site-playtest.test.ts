@@ -82,8 +82,10 @@ test('siteChecks: a healthy site passes every check and reports status, version 
     '/docs/api': '<a href="/home">h</a><a href="#a">a</a><h2 id="a">a</h2>',
     '/quickstart': `<a href="/demo">d</a><a href="/dashboard#key">k</a><a href="mailto:support@hawkesgen.ai">m</a>${QUICK_STEPS}`,
   } });
-  // status + broken-link naming + (links/header/copy)×3 + phone×4 + quickstart tabs + docs snippets
-  assert.equal(Object.keys(lines).length, 1 + 1 + 3 * 3 + 4 + 1 + 1, 'status, docs-link naming, links/header/copy×3, phone×4, quickstart tabs, docs snippets');
+  // status + broken-link naming + the quickstart's and API reference's links + (links/header/copy)×3 + phone×4 + quickstart tabs + docs snippets
+  assert.equal(Object.keys(lines).length, 1 + 1 + 2 + 3 * 3 + 4 + 1 + 1, 'status, docs-link naming, docs links×2, links/header/copy×3, phone×4, quickstart tabs, docs snippets');
+  assert.match(Object.keys(lines)[0], /^Docs playtest: every quickstart JS snippet/, 'the docs criteria come first');
+  assert.match(Object.keys(lines)[1], /^Docs playtest: a broken link/);
   for (const [name, l] of Object.entries(lines)) assert.ok(l.ok, `${name}: ${l.why}`);
   assert.match(lines['Status and version: the service is ok or degraded and has a version'].why, /status ok, version 1\.4\.0/);
   assert.match(lines['Docs playtest: a broken link fails naming the link'].why, /\/gone/);
@@ -96,7 +98,7 @@ test('siteChecks: a healthy site passes every check and reports status, version 
   assert.equal(metrics.docsCodeBlocks, 1); assert.equal(metrics.quickstartHeader, 1);
   assert.equal(fetched.filter((u) => u.endsWith('/v1/net/status')).length, 1, 'the status is read once');
   assert.ok(!fetched.some((u) => u.includes('github.com')), 'outside links are not opened');
-  for (const u of new Set(fetched)) assert.equal(fetched.filter((x) => x === u).length <= 3, true);
+  for (const u of new Set(fetched)) assert.equal(fetched.filter((x) => x === u).length <= 4, true); // the quickstart: snippets, docs links, page links
 });
 
 test('siteChecks: a broken link, a missing header, a block without Copy and a down service each fail their own check', async () => {
@@ -235,4 +237,44 @@ test('quickstartReader: taps use PointerEvent/MouseEvent, not `new` on an arrow 
   assert.doesNotMatch(src, /new\s+\w+\s*\(\s*\)\s*\.(Pointer|Mouse)Event/);
   assert.match(src, /new PointerEvent\(/);
   assert.match(src, /new MouseEvent\(/);
+});
+
+test('siteChecks: the docs criteria come first and each logs what a viewer needs; at:"docs" plays only them', async () => {
+  const seen: [string, string][] = [];
+  const names: string[] = [];
+  const check = async (name: string, fn: () => Promise<unknown>) => { names.push(name); await fn(); };
+  const html = QUICK_STEPS + '<a href="/demo">d</a>';
+  const fetchFn = async (url: string) => ({ ok: true, status: 200, json: async () => ({ health: 'ok', version: '1.0.0' }), text: async () => html, body: null, url });
+  const runDocs = async ({ plan, report, on }: any) => {
+    on('snippet-run', `${plan.connect.name}: running`); on('snippet-out', 'Ada> Ada is in "docs-pt-x" on the relay');
+    report(plan.connect.name, true, 'printed'); report(plan.room.name, true, ''); report(plan.second.name, true, '');
+    return true;
+  };
+  const common = { check, metric: () => {}, origin: ORIGIN, fetchFn, on: (t: string, d: string) => seen.push([t, d]), runDocs,
+    quickRead: async (_p: string, o: any) => { o.on('phone-screen', 'quickstart at 390x844'); return GOOD_QUICK; }, read: (async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] })) as never, phoneRead: (async () => GOOD_PHONE) as never };
+  await m.siteChecks({ ...common, at: 'docs' } as never);
+  assert.equal(names.length, 1 + 2 + 1 + 1, 'broken-link proof, two real pages, quickstart tabs, snippets');
+  assert.ok(!names.some((n) => /^Status|^Home|phone size/.test(n)), 'nothing but the three criteria');
+  assert.equal(seen[0][0], 'start-at');
+  const types = seen.map(([t]) => t);
+  for (const t of ['snippet-run', 'snippet-out', 'snippet', 'docs-link', 'phone-screen']) assert.ok(types.includes(t), `an event ${t}`);
+  assert.ok(types.indexOf('snippet-out') < types.indexOf('docs-link') && types.indexOf('docs-link') < types.indexOf('phone-screen'), 'snippets, then links, then the phone screen');
+  names.length = 0;
+  await m.siteChecks({ ...common, at: 'nowhere' } as never);
+  assert.ok(names.some((n) => /^Status/.test(n)), 'an unknown start plays everything');
+});
+
+test('runLiveDocsSnippets: each snippet logs its run, every printed line and what the step expects', async () => {
+  const d = await import('../public/docs-snippets.mjs');
+  const { join } = await import('../sdk/js/hawkes-net.mjs');
+  const plan = d.planRuns(d.readSteps(`<main>${QUICK_STEPS}</main>`));
+  const ev: [string, string][] = [];
+  const ok = await d.runLiveDocsSnippets(plan, { room: `evt-${Date.now().toString(36)}`, joinFn: (r: string, name: string) => join(r, { project: 'netdemo', endpoint: hub.url, transport: 'relay', name, log: false }),
+    report: () => {}, on: (t: string, x: string) => ev.push([t, x]), timeout: 15000, quiet: 300 });
+  assert.ok(ok);
+  const out = ev.filter(([t]) => t === 'snippet-out').map(([, x]) => x);
+  assert.ok(out.some((x) => /^Ada> Ada is in "evt-.*" on the relay$/.test(x)), out.join(' | '));
+  assert.ok(out.includes(out.find((x) => /^Bob> Bob heard Ada: hello Bob$/.test(x)) as string), 'Bob\'s terminal printed what the step says');
+  assert.equal(ev.filter(([t]) => t === 'snippet-run').length, 3);
+  assert.ok(ev.some(([t, x]) => t === 'snippet-expect' && /Bob should see: .*Bob heard Ada/.test(x)));
 });

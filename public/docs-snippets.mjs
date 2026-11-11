@@ -87,11 +87,15 @@ async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < m
  */
 export async function runLiveDocsSnippets(plan, { joinFn, room, report, on = () => {}, timeout = 20000, quiet = 400 }) {
   let okAll = true;
-  const judge = (name, ok, detail) => { okAll &&= ok; report(name, ok, detail); on(ok ? 'snippet' : 'snippet-fail', `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`); };
+  // `report` (the caller's) gets each verdict; `on` gets what a person would watch: the snippet starting, every line a terminal prints
+  // (`snippet-out`), the lines the step says to expect (`snippet-expect`) and then the verdict (`snippet` / `snippet-fail`, from report's caller).
+  const judge = (name, ok, detail) => { okAll &&= ok; report(name, ok, detail); };
+  const run = (name, what) => on('snippet-run', `${name}: ${what}`);
+  const expecting = (who, want) => on('snippet-expect', `${who} should see: ${want.join(' / ')}`);
   const open = async (name) => {
     const me = await joinFn(room, name);
     const lines = [];
-    const log = (l) => { lines.push(l); };
+    const log = (l) => { lines.push(l); on('snippet-out', `${name}> ${l}`); };
     log(`${name} is in ${JSON.stringify(room)} on the ${me.transport}`);
     const greet = (peer) => { log(`${name} sees ${peer.name} arrive`); me.send('chat', `hello ${peer.name}`); };
     for (const peer of me.peers.values()) if (peer.id !== me.id) greet(peer);
@@ -103,25 +107,31 @@ export async function runLiveDocsSnippets(plan, { joinFn, room, report, on = () 
   try {
     // js-connect: join, print the one line, leave.
     {
-      const p = await open('Ada');
       const want = expectForRoom(plan.connect.expected, room);
+      run(plan.connect.name, 'running as Ada: join, print one line, leave');
+      const p = await open('Ada');
+      expecting('Ada', want);
       await sleep(quiet);
       const d = diffLines(want, p.lines());
       judge(plan.connect.name, !d, d || `printed ${p.lines().join(' / ')}`);
       await p.stop();
     }
     // js-room then js-second: Ada waits, Bob joins; both print the docs' lines.
+    run(plan.room.name, 'running as Ada: join a room and listen');
     ada = await open('Ada');
     {
       const want = expectForRoom(plan.room.expected, room);
+      expecting('Ada', want);
       const first = await until(() => ada.lines().length >= want.length, timeout);
       await sleep(quiet);
       const d = diffLines(want, ada.lines());
       judge(plan.room.name, first && !d, first ? (d || `printed ${ada.lines().join(' / ')}`) : `no output in ${timeout / 1000} s`);
     }
-    bob = await open('Bob');
+    run(plan.second.name, 'Bob starts the same script in a second terminal');
     const wantA = expectForRoom(plan.second.adaExpected, room);
     const wantB = expectForRoom(plan.second.bobExpected, room);
+    expecting('Ada', wantA); expecting('Bob', wantB);
+    bob = await open('Bob');
     const gotAll = await until(() => ada.lines().length >= wantA.length && bob.lines().length >= wantB.length, timeout);
     await sleep(quiet);
     const dA = diffLines(wantA, ada.lines()), dB = diffLines(wantB, bob.lines());

@@ -33,4 +33,4 @@ Ambient: court lines, cyan floor wash, motes, orb glow and the clock; collect ch
 
 ## Docs as play (developers)
 
-The quickstart’s JavaScript steps are executable canon: Ada then Bob join one room and print the lines under each “You should see”. The docs playtest (`tools/docs-playtest.mjs`) runs those snippets as written; `/demo`’s `site` scenario replays the same lines live so a playtest can see them.
+The quickstart’s JavaScript steps are executable canon: Ada then Bob join one room and print the lines under each “You should see”. The docs playtest (`tools/docs-playtest.mjs`) runs those snippets as written; `/demo`’s `site` scenario replays the same lines live so a playtest can see them: it plays them first, logging `snippet-run`, each line a terminal prints (`snippet-out`, e.g. `Bob> Bob heard Ada: hello Bob`), what the step expects (`snippet-expect`) and the verdict (`snippet`). Start it nearer with `{"at":"docs"}` (snippets, broken-link proof, quickstart on a 390x844 screen, about 40 s).

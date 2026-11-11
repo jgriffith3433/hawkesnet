@@ -14,6 +14,7 @@ import { judgeLinks, planRuns, readSteps } from './docs-snippets.mjs';
 export const SITE_CHECK_PAGES = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart']];
 export const PHONE_PAGES = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo']];
 export const PHONE_W = 390;
+export const PHONE_H = 844;
 export const HEADER_LINKS = ['Home', 'Docs', 'Quickstart', 'Demo'];
 
 /** The status read: health must be ok or degraded and the version a version. Returns { health, version } or throws. */
@@ -98,9 +99,11 @@ export function judgeQuickstart(q) {
 export async function quickstartReader(path = '/quickstart', { visible = true, on = () => {}, pause = 450 } = {}) {
   const frame = document.createElement('iframe');
   frame.title = 'Hawkes Net quickstart, under playtest';
+  // The frame is a real 390x844 phone screen (its window is 390 wide and 844 high); on a shorter desktop it is drawn scaled down to fit, never cropped.
+  const fit = visible ? Math.min(1, Math.max(0.4, (innerHeight - 60) / (PHONE_H + 4))) : 1;
   frame.style.cssText = visible
-    ? `position:fixed;right:12px;top:48px;width:${PHONE_W}px;height:min(844px,calc(100vh - 60px));border:2px solid #7db1ff;border-radius:10px;background:#0b0d11;z-index:99998`
-    : `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:844px;border:0`;
+    ? `position:fixed;right:12px;top:48px;width:${PHONE_W}px;height:${PHONE_H}px;border:2px solid #7db1ff;border-radius:10px;background:#0b0d11;z-index:99998;transform:scale(${fit});transform-origin:top right`
+    : `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:${PHONE_H}px;border:0`;
   frame.src = path;
   const load = () => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(`${path} did not load in 20 s`)), 20000); frame.addEventListener('load', () => { clearTimeout(t); res(); }, { once: true }); });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -113,6 +116,8 @@ export async function quickstartReader(path = '/quickstart', { visible = true, o
     // returned the window and threw "w is not a constructor" on beta r_273e167a7ec9.
     const win = () => frame.contentWindow, doc = () => frame.contentDocument;
     try { store = win().localStorage; before = store.getItem(QUICKSTART_KEY); store.removeItem(QUICKSTART_KEY); } catch { /* storage blocked */ }
+    // The phone screenshot's evidence, first: the screen's size and whether the page is wider than it.
+    on('phone-screen', `quickstart at ${win().innerWidth}x${win().innerHeight} (a phone): page ${doc().documentElement.scrollWidth} px wide in a ${win().innerWidth} px screen, ${doc().documentElement.scrollWidth > win().innerWidth ? 'SIDEWAYS SCROLL' : 'no sideways scroll'}`);
     // A tap: pointer events and the click at the middle of the element, as a finger or mouse would send them.
     // Construct events from the parent realm (same as lab-playtest.mjs); `view` names the frame's window.
     const tap = (el) => {
@@ -237,105 +242,137 @@ export async function frameReader(path, { origin = location.origin } = {}) {
  * `runDocs({ plan, report, on })` (optional): live Ada/Bob join mirroring the quickstart JS steps (demo.html passes it).
  */
 export async function siteChecks({ check, metric, log = () => {}, progress = () => {}, note = () => {}, on = () => {}, origin = location.origin,
-  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader, quickRead = quickstartReader, runDocs = null }) {
-  await check('Status and version: the service is ok or degraded and has a version', async () => {
-    const res = await fetchFn(`${origin}/v1/net/status`);
-    if (!res.ok) throw new Error(`/v1/net/status answered ${res.status}`);
-    const s = judgeStatus(await res.json());
-    metric('status', s.health === 'ok' ? 1 : 0.5);
-    metric('versionMajor', s.parts[0]); metric('versionMinor', s.parts[1]); metric('versionPatch', s.parts[2]);
-    note(`status ${s.health}, version ${s.version}`);
-    return `status ${s.health}, version ${s.version}`;
-  });
-  // Criterion: a broken docs link fails naming the link (same judge as tools/docs-playtest.mjs).
-  await check('Docs playtest: a broken link fails naming the link', async () => {
-    const page = '<a href="/gone">g</a><a href="/demo">d</a><a href="https://evil.example/x">e</a>';
-    const fetchOne = async (u) => ({ ok: !String(u).endsWith('/gone'), status: String(u).endsWith('/gone') ? 404 : 200, body: null });
-    const { broken } = await judgeLinks(page, { pageUrl: `${origin}/quickstart`, origin, fetchFn: fetchOne });
-    const named = broken.find((b) => b.href === '/gone');
-    if (!named) throw new Error(`broken list did not name /gone (got: ${broken.map((b) => b.href).join(', ') || 'none'})`);
-    if (!/404/.test(named.why)) throw new Error(`/gone was named but why was "${named.why}", wanted 404`);
-    const evil = broken.find((b) => b.href === 'https://evil.example/x');
-    if (!evil) throw new Error('off-site evil.example was not named');
-    metric('docsBrokenLinkNamed', 1);
-    on('docs-link', `named broken link /gone (${named.why}) and off-site ${evil.href}`);
-    return `named /gone (${named.why}) and ${evil.href} (${evil.why})`;
-  });
-  progress(0.15);
-  let i = 0;
-  for (const [name, path] of SITE_CHECK_PAGES) {
-    const key = name.toLowerCase();
-    await check(`${name} (${path}): every link works`, async () => {
-      const url = origin + path;
-      const res = await fetchFn(url);
-      if (!res.ok) throw new Error(`${path} answered ${res.status}`);
-      const out = await checkLinks(await res.text(), { pageUrl: url, origin, fetchFn });
-      const c = out.counts;
-      metric(`${key}Links`, c.total); metric(`${key}LinksBroken`, out.failed.length);
-      for (const r of out.results) log(`${name} link ${r.ok ? 'ok' : 'BROKEN'} ${r.kind} ${r.href} (${r.why})`);
-      if (!c.total) throw new Error(`no links found on ${path}`);
-      if (out.failed.length) throw new Error(`${out.failed.length} of ${c.total} broken: ${out.failed.slice(0, 4).map((r) => `${r.href} (${r.why})`).join('; ')}`);
-      return `${c.total} links working (${c.same} here, ${c.outside} elsewhere by href, ${c.anchor} on the page${c.mail ? `, ${c.mail} mail` : ''})`;
+  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader, quickRead = quickstartReader, runDocs = null, at = '' }) {
+  // The three things the docs playtest is judged on come first, so the footage and the first events show them: the quickstart's JS
+  // snippets running and printing, a broken link named, the quickstart on a 390x844 phone screen. `at` starts nearer: 'docs' runs only
+  // those three (about 40 s), 'snippets', 'links' (the broken-link proof and every page's links) or 'phone' run one part; anything else, all.
+  const statusCheck = async () => {
+    await check('Status and version: the service is ok or degraded and has a version', async () => {
+      const res = await fetchFn(`${origin}/v1/net/status`);
+      if (!res.ok) throw new Error(`/v1/net/status answered ${res.status}`);
+      const s = judgeStatus(await res.json());
+      metric('status', s.health === 'ok' ? 1 : 0.5);
+      metric('versionMajor', s.parts[0]); metric('versionMinor', s.parts[1]); metric('versionPatch', s.parts[2]);
+      note(`status ${s.health}, version ${s.version}`);
+      return `status ${s.health}, version ${s.version}`;
     });
-    let page = null, pageError = null;
-    try { page = await read(path); } catch (e) { pageError = e; }
-    await check(`${name} (${path}): the shared header has Home, Docs, Quickstart and Demo`, async () => {
-      if (pageError) throw pageError;
-      const why = judgeHeader(page.header);
-      metric(`${key}Header`, 1);
-      return why;
+  };
+  const brokenLinkCheck = async () => {
+    // Criterion: a broken docs link fails naming the link (same judge as tools/docs-playtest.mjs).
+    await check('Docs playtest: a broken link fails naming the link', async () => {
+      const page = '<a href="/gone">g</a><a href="/demo">d</a><a href="https://evil.example/x">e</a>';
+      const fetchOne = async (u) => ({ ok: !String(u).endsWith('/gone'), status: String(u).endsWith('/gone') ? 404 : 200, body: null });
+      const { broken } = await judgeLinks(page, { pageUrl: `${origin}/quickstart`, origin, fetchFn: fetchOne });
+      const named = broken.find((b) => b.href === '/gone');
+      if (!named) throw new Error(`broken list did not name /gone (got: ${broken.map((b) => b.href).join(', ') || 'none'})`);
+      if (!/404/.test(named.why)) throw new Error(`/gone was named but why was "${named.why}", wanted 404`);
+      const evil = broken.find((b) => b.href === 'https://evil.example/x');
+      if (!evil) throw new Error('off-site evil.example was not named');
+      metric('docsBrokenLinkNamed', 1);
+      on('docs-link', `named broken link /gone (${named.why}) and off-site ${evil.href}`);
+      return `named /gone (${named.why}) and ${evil.href} (${evil.why})`;
     });
-    await check(`${name} (${path}): every code block has a Copy button`, async () => {
-      if (pageError) throw pageError;
-      const why = judgeCopy(page.blocks);
-      metric(`${key}CodeBlocks`, page.blocks.length);
-      return why;
-    });
-    progress(0.2 + 0.5 * (++i / SITE_CHECK_PAGES.length));
-  }
-  // Phone size (390 px wide): each page once in a narrow frame.
-  let j = 0;
-  for (const [name, path] of PHONE_PAGES) {
-    await check(`${name} (${path}) at phone size (${PHONE_W} px): no sideways scroll, the nav folds into a Menu that opens on tap, text is readable`, async () => {
-      const p = await phoneRead(path);
-      const why = judgePhone(p);
-      metric(`${name.toLowerCase()}PhoneOverflow`, Math.max(0, p.scrollWidth - p.width)); metric(`${name.toLowerCase()}MinFont`, p.minFont);
-      return why;
-    });
-    progress(0.7 + 0.3 * (++j / PHONE_PAGES.length));
-  }
-  await check('Quickstart (/quickstart): JS, Babylon and Unity tabs with five steps each, expected output and Copy on every step, the chosen tab remembered, nothing sideways at 390 px', async () => {
-    const q = await quickRead('/quickstart', { on: (type, detail) => on(type, detail) });
-    const why = judgeQuickstart(q);
-    metric('quickstartTabs', q.tabs.length); metric('quickstartSteps', q.panels.reduce((n, p) => n + p.steps, 0));
-    if (q.codeScroll) { metric('quickstartCodeScrolled', q.codeScroll.moved); metric('quickstartCodeScrollPageGrowth', Math.max(0, q.codeScroll.page)); }
-    metric('quickstartOverflow', Math.max(0, ...q.panels.map((p) => p.scrollWidth - p.width)));
-    return why;
-  });
-  // Criterion: every quickstart JS snippet prints what its step says (live join when runDocs is wired; else structure only).
-  await check('Docs playtest: every quickstart JS snippet prints what its step says', async () => {
-    const res = await fetchFn(`${origin}/quickstart`);
-    if (!res.ok) throw new Error(`/quickstart answered ${res.status}`);
-    const html = await res.text();
-    const plan = planRuns(readSteps(html));
-    metric('docsSnippetSteps', 3);
-    if (!runDocs) {
-      on('snippet', `plan ready: ${plan.connect.name}; ${plan.room.name}; ${plan.second.name} (live join not wired on this run)`);
-      return `planned ${plan.connect.name}, ${plan.room.name}, ${plan.second.name}`;
+    // The same judge on the real pages: every link of the quickstart and the API reference answers 200 and stays on the Hawkes sites.
+    for (const path of ['/quickstart', '/docs/api']) {
+      await check(`Docs playtest: every link of ${path} answers 200 and stays on the Hawkes Net site`, async () => {
+        const url = origin + path;
+        const res = await fetchFn(url);
+        if (!res.ok) throw new Error(`${path} answered ${res.status}`);
+        const { broken, total } = await judgeLinks(await res.text(), { pageUrl: url, origin, fetchFn });
+        metric(`docs${path === '/quickstart' ? 'Quickstart' : 'Api'}LinksFollowed`, total); metric(`docs${path === '/quickstart' ? 'Quickstart' : 'Api'}LinksBroken`, broken.length);
+        on('docs-link', `${path}: followed ${total} links, ${broken.length ? `BROKEN: ${broken.slice(0, 4).map((b) => `${b.href} (${b.why})`).join('; ')}` : 'every one answers 200 or is on a Hawkes site'}`);
+        if (broken.length) throw new Error(`${broken.length} of ${total} broken: ${broken.slice(0, 4).map((b) => `${b.href} (${b.why})`).join('; ')}`);
+        return `${total} links, none broken`;
+      });
     }
-    const got = [];
-    const ok = await runDocs({
-      plan,
-      report: (n, o, d) => { got.push([n, o, d]); on(o ? 'snippet' : 'snippet-fail', `${o ? 'PASS' : 'FAIL'} ${n}${d ? ` — ${d}` : ''}`); },
-      on,
-    });
-    if (!ok || got.length !== 3 || got.some(([, o]) => !o)) {
-      const fail = got.find(([, o]) => !o) || ['snippets', false, 'no report'];
-      throw new Error(`${fail[0]}: ${fail[2] || 'failed'}`);
+  };
+  const pageChecks = async () => {
+    progress(0.15);
+    let i = 0;
+    for (const [name, path] of SITE_CHECK_PAGES) {
+      const key = name.toLowerCase();
+      await check(`${name} (${path}): every link works`, async () => {
+        const url = origin + path;
+        const res = await fetchFn(url);
+        if (!res.ok) throw new Error(`${path} answered ${res.status}`);
+        const out = await checkLinks(await res.text(), { pageUrl: url, origin, fetchFn });
+        const c = out.counts;
+        metric(`${key}Links`, c.total); metric(`${key}LinksBroken`, out.failed.length);
+        for (const r of out.results) log(`${name} link ${r.ok ? 'ok' : 'BROKEN'} ${r.kind} ${r.href} (${r.why})`);
+        if (!c.total) throw new Error(`no links found on ${path}`);
+        if (out.failed.length) throw new Error(`${out.failed.length} of ${c.total} broken: ${out.failed.slice(0, 4).map((r) => `${r.href} (${r.why})`).join('; ')}`);
+        return `${c.total} links working (${c.same} here, ${c.outside} elsewhere by href, ${c.anchor} on the page${c.mail ? `, ${c.mail} mail` : ''})`;
+      });
+      let page = null, pageError = null;
+      try { page = await read(path); } catch (e) { pageError = e; }
+      await check(`${name} (${path}): the shared header has Home, Docs, Quickstart and Demo`, async () => {
+        if (pageError) throw pageError;
+        const why = judgeHeader(page.header);
+        metric(`${key}Header`, 1);
+        return why;
+      });
+      await check(`${name} (${path}): every code block has a Copy button`, async () => {
+        if (pageError) throw pageError;
+        const why = judgeCopy(page.blocks);
+        metric(`${key}CodeBlocks`, page.blocks.length);
+        return why;
+      });
+      progress(0.2 + 0.5 * (++i / SITE_CHECK_PAGES.length));
     }
-    metric('docsSnippetsPassed', got.length);
-    return got.map(([n]) => n).join('; ');
-  });
+  };
+  const phoneChecks = async () => {
+    // Phone size (390 px wide): each page once in a narrow frame.
+    let j = 0;
+    for (const [name, path] of PHONE_PAGES) {
+      await check(`${name} (${path}) at phone size (${PHONE_W} px): no sideways scroll, the nav folds into a Menu that opens on tap, text is readable`, async () => {
+        const p = await phoneRead(path);
+        const why = judgePhone(p);
+        metric(`${name.toLowerCase()}PhoneOverflow`, Math.max(0, p.scrollWidth - p.width)); metric(`${name.toLowerCase()}MinFont`, p.minFont);
+        return why;
+      });
+      progress(0.7 + 0.3 * (++j / PHONE_PAGES.length));
+    }
+  };
+  const quickstartCheck = async () => {
+    await check('Quickstart (/quickstart): JS, Babylon and Unity tabs with five steps each, expected output and Copy on every step, the chosen tab remembered, nothing sideways at 390 px', async () => {
+      const q = await quickRead('/quickstart', { on: (type, detail) => on(type, detail) });
+      const why = judgeQuickstart(q);
+      metric('quickstartTabs', q.tabs.length); metric('quickstartSteps', q.panels.reduce((n, p) => n + p.steps, 0));
+      if (q.codeScroll) { metric('quickstartCodeScrolled', q.codeScroll.moved); metric('quickstartCodeScrollPageGrowth', Math.max(0, q.codeScroll.page)); }
+      metric('quickstartOverflow', Math.max(0, ...q.panels.map((p) => p.scrollWidth - p.width)));
+      return why;
+    });
+  };
+  const snippetsCheck = async () => {
+    // Criterion: every quickstart JS snippet prints what its step says (live join when runDocs is wired; else structure only).
+    await check('Docs playtest: every quickstart JS snippet prints what its step says', async () => {
+      const res = await fetchFn(`${origin}/quickstart`);
+      if (!res.ok) throw new Error(`/quickstart answered ${res.status}`);
+      const html = await res.text();
+      const plan = planRuns(readSteps(html));
+      metric('docsSnippetSteps', 3);
+      if (!runDocs) {
+        on('snippet', `plan ready: ${plan.connect.name}; ${plan.room.name}; ${plan.second.name} (live join not wired on this run)`);
+        return `planned ${plan.connect.name}, ${plan.room.name}, ${plan.second.name}`;
+      }
+      const got = [];
+      const ok = await runDocs({
+        plan,
+        report: (n, o, d) => { got.push([n, o, d]); on(o ? 'snippet' : 'snippet-fail', `${o ? 'PASS' : 'FAIL'} ${n}${d ? ` — ${d}` : ''}`); },
+        on,
+      });
+      if (!ok || got.length !== 3 || got.some(([, o]) => !o)) {
+        const fail = got.find(([, o]) => !o) || ['snippets', false, 'no report'];
+        throw new Error(`${fail[0]}: ${fail[2] || 'failed'}`);
+      }
+      metric('docsSnippetsPassed', got.length);
+      return got.map(([n]) => n).join('; ');
+    });
+  };
+  const parts = { docs: [snippetsCheck, brokenLinkCheck, quickstartCheck], snippets: [snippetsCheck], links: [brokenLinkCheck, pageChecks], phone: [quickstartCheck] };
+  const chosen = parts[at];
+  if (chosen) on('start-at', at);
+  for (const part of chosen ?? [snippetsCheck, brokenLinkCheck, quickstartCheck, statusCheck, pageChecks, phoneChecks]) await part();
 }
 
 /**
@@ -344,23 +381,24 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
  * for it while it is the current run. Every other id goes to the original start.
  */
 export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, quickRead, runDocs = null, where = location.host } = {}) {
-  const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block, docs snippets', seconds: 90, tags: ['smoke', 'site'],
-    description: 'Reads /v1/net/status once (ok or degraded, and the version), proves a broken docs link is named, fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide, and shows the quickstart on screen at 390 px: taps its JavaScript, Babylon.js and Unity tabs, shows the expected output of each step, scrolls a code box inside its own box, and reloads to see the last tab reopen (events: tab, expect, codescroll, remembered). Then runs the quickstart JS steps live (Ada/Bob) so each prints what the step says (events: snippet). Phone checks: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
+  const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block, docs snippets', seconds: 90, tags: ['smoke', 'site'], starts: ['docs', 'snippets', 'links', 'phone'],
+    description: 'Reads /v1/net/status once (ok or degraded, and the version), proves a broken docs link is named, fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide, and shows the quickstart on screen at 390 px: taps its JavaScript, Babylon.js and Unity tabs, shows the expected output of each step, scrolls a code box inside its own box, and reloads to see the last tab reopen (events: tab, expect, codescroll, remembered). Then runs the quickstart JS steps live (Ada/Bob) so each prints what the step says (events: snippet). Phone checks: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario. The docs criteria come first (snippets, broken link, quickstart at 390x844); options.at starts nearer: "docs" plays only those three (about 40 s, logs start-at), "snippets", "links" or "phone" one part.' };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
   let run = null;
   const r1 = (n) => Math.round(n * 10) / 10;
   const now = () => (run ? (performance.now() - run.t0) / 1000 : 0);
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const panel = typeof document === 'undefined' ? null : document.createElement('div');
-  if (panel) { panel.id = 'hawkes-net-site-playtest'; panel.style.cssText = 'position:fixed;right:12px;top:12px;z-index:99999;max-width:420px;background:rgba(10,12,16,.86);color:#e8eaed;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;border-radius:8px;display:none;pointer-events:none'; }
+  if (panel) { panel.id = 'hawkes-net-site-playtest'; panel.style.cssText = 'position:fixed;left:12px;top:12px;z-index:99999;max-width:420px;background:rgba(10,12,16,.86);color:#e8eaed;font:12px/1.5 ui-monospace,Menlo,monospace;padding:8px 12px;border-radius:8px;display:none;pointer-events:none'; }
   const show = () => {
     if (!run || !panel) return;
     if (!panel.isConnected) document.body.appendChild(panel);
     panel.style.display = 'block';
     const head = run.done ? (run.state.status === 'won' ? '<b style="color:#9fe870">PASS</b>' : `<b style="color:#ff7b72">${run.state.status === 'lost' ? 'FAIL' : run.state.status.toUpperCase()}</b>`) : '<b style="color:#ffd84d">running</b>';
-    panel.innerHTML = `Playtest site on ${esc(where)} · ${head}<br>` + run.lines.map((l) => `${l.ok === true ? '<span style="color:#9fe870">✓</span>' : l.ok === false ? '<span style="color:#ff7b72">✗</span>' : '…'} ${esc(l.text)}${l.why ? ` <span style="color:#9aa1ad">(${esc(l.why)})</span>` : ''}`).join('<br>');
+    const term = run.terminal.length ? `<br><span style="color:#9aa1ad">terminals</span><br>${run.terminal.slice(-9).map((t) => `<span style="color:#7db1ff">${esc(t)}</span>`).join('<br>')}` : '';
+    panel.innerHTML = `Playtest site on ${esc(where)} · ${head}<br>` + run.lines.slice(-8).map((l) => `${l.ok === true ? '<span style="color:#9fe870">✓</span>' : l.ok === false ? '<span style="color:#ff7b72">✗</span>' : '…'} ${esc(l.text)}${l.why ? ` <span style="color:#9aa1ad">(${esc(l.why)})</span>` : ''}`).join('<br>') + term;
   };
-  const event = (type, detail) => { run.events.push({ t: r1(now()), type, ...(detail === undefined ? {} : { detail: String(detail) }) }); run.moved = performance.now(); };
+  const event = (type, detail) => { if (type === 'snippet-out') { run.terminal.push(String(detail)); show(); } run.events.push({ t: r1(now()), type, ...(detail === undefined ? {} : { detail: String(detail) }) }); run.moved = performance.now(); };
   const problem = (message) => { if (!run.problems.some((p) => p.message === message)) { run.problems.push({ severity: 'bug', message }); event('problem', `bug: ${message}`); } };
   const finish = (outcome) => {
     if (run.done) return;
@@ -388,12 +426,12 @@ export function addSiteScenario(api, { origin = location.origin, fetchFn, read, 
   api.start = async (id, options = {}) => {
     if (id !== 'site') { run = null; panel?.remove(); return original.start(id, options); }
     if (!run?.done && original.stop) original.stop();
-    run = { t0: performance.now(), moved: performance.now(), done: false, lines: [], log: [], events: [], problems: [], metrics: {}, note: '',
+    run = { t0: performance.now(), moved: performance.now(), done: false, lines: [], terminal: [], log: [], events: [], problems: [], metrics: {}, note: '',
       state: { ready: true, status: 'running', progress: 0, scene: 'Demo' } };
     const me = run;
     event('start', 'site'); event('scene', 'Demo'); show();
     try {
-      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, quickRead, runDocs, note: (s) => { me.note = s; }, on: (type, detail) => event(type, detail),
+      await siteChecks({ at: String(options?.at ?? ''), check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, quickRead, runDocs, note: (s) => { me.note = s; }, on: (type, detail) => event(type, detail),
         log: (l) => { me.log.push(`${r1(now())}s ${l}`); if (me.log.length > 300) me.log.shift(); },
         progress: (p) => { me.state.progress = Math.max(0, Math.min(1, p)); me.moved = performance.now(); } });
       if (typeof location !== 'undefined' && location.origin !== origin) problem('the bot left the Hawkes Net site');
