@@ -1053,7 +1053,7 @@
   const { addDrainScenario } = await import('/drain-playtest.mjs');
   addDrainScenario(playtest, {
     main: () => net,
-    openPeer: () => openPlaytestPeer('Drain peer', `drain-${Math.random()}`),
+    openPeer: (name = 'Drain peer') => openPlaytestPeer(name, `drain-${Math.random()}`),
     roomName: () => room,
     untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
   });
