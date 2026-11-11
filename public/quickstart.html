@@ -160,7 +160,8 @@ mp.when('peer:join', (p) =&gt; console.log(p.name + ' arrived'));</code></pre>
 <pre><code>status: online</code></pre></div></li>
 
   <li class="step" id="babylon-second"><h2>See the second player</h2>
-    <p>Open the same page in a second browser tab. Give it a different <code>name</code> if you like; the default avatar is a capsule with the name over it.</p>
+    <p>Open the same page in a second browser tab. Give it a different <code>name</code> if you like; the default avatar is a capsule with the name over it. With Vite, run the page and open its address twice:</p>
+<pre><code>npx vite          # then open http://localhost:5173 in two tabs</code></pre>
     <div class="expect"><b>You should see:</b> in the first tab's console, and a capsule in the scene that moves when the other tab's player moves:
 <pre><code>Player 42 arrived</code></pre>
       <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of the scene: your sphere and the other player's capsule on a floor"><rect x="0" y="0" width="220" height="124" fill="#0e1116"/><path d="M0 84 L220 84 L220 124 L0 124 Z" fill="#171a20"/><circle cx="70" cy="76" r="14" fill="#7db1ff"/><rect x="140" y="44" width="22" height="44" rx="11" fill="#4ade80"/><rect x="126" y="28" width="50" height="9" rx="4" fill="#eef0f3"/></svg><span>Your ball, and the other player as a green capsule with their name over it.</span></div></div></li>
