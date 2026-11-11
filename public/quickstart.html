@@ -28,99 +28,163 @@
   @media (max-width: 640px) { h1 { font-size: 30px; margin-top: 28px; } h2 { margin-top: 32px; } .lede { font-size: 16px; } .cta .btn { flex: 1 1 100%; text-align: center; } .grid { grid-template-columns: minmax(0, 1fr); } }
   footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 22px 0 6px; border-bottom: 1px solid var(--line); }
+  .tabs button { font: 600 15px/1 Inter, system-ui, sans-serif; color: var(--muted); background: none; border: 0; border-bottom: 3px solid transparent; padding: 12px 18px; cursor: pointer; min-height: 44px; }
+  .tabs button:hover { color: var(--ink); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .panel[hidden] { display: none; }
   ol.steps { list-style: none; padding: 0; counter-reset: s; }
-  ol.steps > li { counter-increment: s; margin: 0 0 14px; } ol.steps > li > h2 { margin: 36px 0 8px; }
+  ol.steps > li { counter-increment: s; margin: 0 0 14px; min-width: 0; } ol.steps > li > h2 { font-size: 20px; margin: 30px 0 8px; }
   ol.steps > li > h2::before { content: counter(s); display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 15px; margin-right: 10px; vertical-align: 2px; }
-  .expect { border-left: 3px solid var(--ok); background: var(--card); border-radius: 0 8px 8px 0; padding: 8px 14px; margin: 10px 0 0; font-size: 14px; }
-  .expect b { color: var(--ok); } .expect pre { margin-top: 6px; }
-  .toc { display: flex; gap: 12px; flex-wrap: wrap; font-size: 14px; }
-
+  .expect { border-left: 3px solid var(--ok); background: var(--card); border-radius: 0 8px 8px 0; padding: 8px 14px; margin: 10px 0 0; font-size: 14px; min-width: 0; }
+  .expect > b { color: var(--ok); } .expect .codeblock { margin: 6px 0 0; } .expect pre { margin-top: 6px; }
+  .shot { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .shot svg { width: 220px; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--code); flex: none; }
+  .shot span { flex: 1 1 200px; min-width: 0; }
 </style>
 </head>
 <body>
 
 <main class="wrap">
   <h1>Two players in one room, in 10 minutes</h1>
-  <p class="lede">You'll make a free test project and an API key, then put two clients in the same room and watch them hear each other. Every step says what you should see when it worked. Nothing here costs anything: test projects and test rooms are free.</p>
-  <div class="toc" aria-label="Steps"><a href="#account">1 Account</a><a href="#project">2 Project</a><a href="#key">3 Key</a><a href="#room">4 First room</a><a href="#browser">5 In a browser</a><a href="#engines">6 Babylon.js and Unity</a><a href="#next">What next</a></div>
+  <p class="lede">Pick your engine. Each tab has the same five steps: get a free test project and key, install, connect, join a room, and see a second player. Under every step is what you should see when it worked. Nothing here costs anything: test projects and test rooms are free.</p>
 
+  <div class="tabs" role="tablist" aria-label="Your engine">
+    <button type="button" role="tab" id="tab-js" aria-controls="panel-js" aria-selected="true" data-tab="js">JavaScript</button>
+    <button type="button" role="tab" id="tab-babylon" aria-controls="panel-babylon" aria-selected="false" data-tab="babylon" tabindex="-1">Babylon.js</button>
+    <button type="button" role="tab" id="tab-unity" aria-controls="panel-unity" aria-selected="false" data-tab="unity" tabindex="-1">Unity</button>
+  </div>
+
+  <section class="panel" id="panel-js" role="tabpanel" aria-labelledby="tab-js" data-tab="js">
+  <p class="note">Plain JavaScript on Node 22 or newer (any computer where <code>node -v</code> works). Two terminals play two players.</p>
   <ol class="steps">
-  <li id="account"><h2>Sign in (1 minute)</h2>
-    <p>Open the <a href="https://net.hawkesgames.com/">dashboard</a> and sign in with your hawkesgames.com account. No account yet? The sign-in page makes one, free.</p>
-    <div class="expect"><b>You should see:</b> the dashboard's <b>Projects</b> page with your name at the top right, and "Put your first game online" if you have no project yet.</div></li>
-
-  <li id="project"><h2>Make a test project (1 minute)</h2>
-    <p>A project is your game's identity on Hawkes Net. Type a name, for example <code>My first game</code>, and press <b>Make my first project</b>. The project's id is made from the name (<code>my-first-game</code>); it is what your code passes as <code>project</code>.</p>
-    <p class="note">A free account is enough: your project builds and tests on localhost and from keyed scripts, in test rooms, with up to 3 rooms and 8 players a room. Putting your game on your own site needs credits; that's step "What next".</p>
-    <div class="expect"><b>You should see:</b> the project's page with its id (<code>my-first-game</code>), and tabs for <b>Rooms</b>, <b>Tickets</b>, <b>Settings</b> and <b>Connect</b>. Rooms is empty.</div></li>
-
-  <li id="key"><h2>Make an API key (1 minute)</h2>
-    <p>Scripts, bots and servers have no website to be recognised by, so they use a key. Open <a href="https://net.hawkesgames.com/#account">Account</a> and press <b>Make my API key</b>. The key is shown once: copy it now.</p>
-    <p>Put it in your shell. Keep it out of your code and out of git.</p>
+  <li class="step" id="js-key"><h2>Get a free test project key</h2>
+    <p>Open the <a href="https://net.hawkesgames.com/">dashboard</a> and sign in (no account yet? The sign-in page makes one, free). Type a name such as <code>My first game</code> and press <b>Make my first project</b>: its id (<code>my-first-game</code>) is what your code passes as <code>project</code>. Then open <a href="https://net.hawkesgames.com/#account">Account</a>, press <b>Make my API key</b> and copy it now: it is shown once. Put it in your shell, never in your code or git.</p>
 <pre><code>export HAWKESGEN_KEY=paste_your_key_here          # macOS, Linux
 $env:HAWKESGEN_KEY = "paste_your_key_here"        # Windows PowerShell</code></pre>
-    <div class="expect"><b>You should see:</b> after you press the button, the whole key once; afterwards the Account page only shows its first characters ("Your key starts …, made today, not used yet"). Making a new key stops the old one at once.</div></li>
+    <div class="expect"><b>You should see:</b> the project page with its id and tabs for Rooms, Tickets, Settings and Connect, and on Account the key once. Afterwards Account only shows how it starts:
+<pre><code>Your key starts hk_live_ab12…, made today, not used yet</code></pre></div></li>
 
-  <li id="room"><h2>Join your first room, twice (3 minutes)</h2>
-    <p>You need Node 22 or newer (any computer that runs <code>node -v</code> will do). In an empty folder:</p>
+  <li class="step" id="js-install"><h2>Install</h2>
+    <p>In an empty folder:</p>
 <pre><code>npm init -y
 npm install @hawkesgen/net</code></pre>
-    <p>Save this as <code>first-room.mjs</code>. It plays two players, Ada and Bob, who join <code>first-room</code> and say hello to each other:</p>
+    <div class="expect"><b>You should see:</b>
+<pre><code>added 1 package, and audited 2 packages in 1s
+found 0 vulnerabilities</code></pre></div></li>
+
+  <li class="step" id="js-connect"><h2>Connect</h2>
+    <p>Save this as <code>first-room.mjs</code>. It asks for a ticket with your key and opens the connection. Run it with a name: <code>node first-room.mjs Ada</code>.</p>
+<pre><code>import { join } from '@hawkesgen/net';
+
+const name = process.argv[2] ?? 'Ada';
+const me = await join('first-room', { project: 'my-first-game', key: process.env.HAWKESGEN_KEY, name });
+console.log(`${name} is in "first-room" on the ${me.transport}`);
+await me.leave();</code></pre>
+    <div class="expect"><b>You should see:</b>
+<pre><code>Ada is in "first-room" on the relay</code></pre>
+      <span class="note">If it fails, the error carries a <code>code</code> that <a href="/docs/errors">/docs/errors</a> explains: a 401 means the key is missing or was replaced (step 1); a 403 or "unknown project" means <code>project</code> isn't your project's id.</span></div></li>
+
+  <li class="step" id="js-room"><h2>Join a room and listen</h2>
+    <p>Replace the file with this: Ada now waits in <code>first-room</code>, greets everyone who is there or arrives, and prints what she hears. She stays 30 seconds, then leaves by herself.</p>
 <pre id="script-node"><code>import { join } from '@hawkesgen/net';
 
-const opts = { project: 'my-first-game', key: process.env.HAWKESGEN_KEY };
+const name = process.argv[2] ?? 'Ada';
+const me = await join('first-room', { project: 'my-first-game', key: process.env.HAWKESGEN_KEY, name });
+console.log(`${name} is in "first-room" on the ${me.transport}`);
 
-const ada = await join('first-room', { ...opts, name: 'Ada' });
-console.log(`Ada is in "first-room" on the ${ada.transport}`);
-ada.when('peer:join', (peer) => console.log(`Ada sees ${peer.name} arrive`));
-ada.on('chat', (text, from) => console.log(`Ada heard ${from.name}: ${text}`));
+const greet = (peer) => { console.log(`${name} sees ${peer.name} arrive`); me.send('chat', `hello ${peer.name}`); };
+for (const peer of me.peers.values()) if (peer.id !== me.id) greet(peer);   // whoever was here before you
+me.when('peer:join', greet);                                              // whoever comes after
+me.on('chat', (text, from) => console.log(`${name} heard ${from.name}: ${text}`));
 
-const bob = await join('first-room', { ...opts, name: 'Bob' });
-console.log(`Bob is in "first-room" on the ${bob.transport}`);
-bob.on('chat', (text, from) => console.log(`Bob heard ${from.name}: ${text}`));
+await new Promise((r) =&gt; setTimeout(r, 30000));
+await me.leave();</code></pre>
+<pre><code>node first-room.mjs Ada</code></pre>
+    <div class="expect"><b>You should see</b> the same line, then quiet while she waits. On the dashboard, your project's <b>Rooms</b> tab lists <code>first-room</code> with 1 player:
+<pre><code>Ada is in "first-room" on the relay</code></pre></div></li>
 
-ada.send('chat', 'hello Bob');
-bob.send('chat', 'hello Ada');
-
-await new Promise((r) =&gt; setTimeout(r, 500));
-await ada.leave();
-await bob.leave();</code></pre>
-<pre><code>node first-room.mjs</code></pre>
-    <div class="expect"><b>You should see</b> (the last three lines can come in either order):
-<pre><code>Ada is in "first-room" on the relay
-Bob is in "first-room" on the relay
+  <li class="step" id="js-second"><h2>See the second player</h2>
+    <p>Within those 30 seconds, open a second terminal in the same folder (with the key set there too) and run Bob:</p>
+<pre><code>node first-room.mjs Bob</code></pre>
+    <div class="expect"><b>You should see</b> in Ada's terminal (the last two lines can come in either order):
+<pre id="expect-node-ada"><code>Ada is in "first-room" on the relay
 Ada sees Bob arrive
-Bob heard Ada: hello Bob
 Ada heard Bob: hello Ada</code></pre>
-      Then the script ends by itself. Two clients, one room, messages both ways: that's multiplayer.</div>
-    <p class="note">If it fails, the error carries a <code>code</code> that <a href="/docs/errors">/docs/errors</a> explains. The usual ones: <code>hawkes-net: ticket refused (401)</code> means the key is missing or was replaced (step 3); a 403 or "unknown project" means <code>project</code> isn't your project's id (step 2).</p></li>
+      and in Bob's:
+<pre id="expect-node-bob"><code>Bob is in "first-room" on the relay
+Bob sees Ada arrive
+Bob heard Ada: hello Bob</code></pre>
+      Two clients, one room, messages both ways: that's multiplayer.</div></li>
+  </ol>
+  </section>
 
-  <li id="browser"><h2>The same in a browser (2 minutes)</h2>
-    <p>Web pages need no key. Your own machine (<code>localhost</code>) always joins your project's test rooms. Save this as <code>index.html</code> and serve the folder, for example <code>npx serve .</code> (it's the page that must be on <code>localhost</code>; opening the file straight from disk won't do):</p>
-<pre id="script-web"><code>&lt;script type="module"&gt;
-import { lobby } from 'https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs';
+  <section class="panel" id="panel-babylon" role="tabpanel" aria-labelledby="tab-babylon" data-tab="babylon" hidden>
+  <p class="note">A Babylon.js scene in the browser, with a bundler (Vite, webpack) or a plain page. Your own machine (<code>localhost</code>) always joins your project's free test rooms, so a web page needs no key in it.</p>
+  <ol class="steps">
+  <li class="step" id="babylon-key"><h2>Get a free test project key</h2>
+    <p>Open the <a href="https://net.hawkesgames.com/">dashboard</a>, sign in (free), type a name such as <code>My first game</code> and press <b>Make my first project</b>. Its id (<code>my-first-game</code>) is your <code>project</code>. A web page on <code>localhost</code> needs nothing more; keep a key for scripts and bots (<a href="https://net.hawkesgames.com/#account">Account</a> &gt; <b>Make my API key</b>, shown once):</p>
+<pre><code>export HAWKESGEN_KEY=paste_your_key_here          # macOS, Linux
+$env:HAWKESGEN_KEY = "paste_your_key_here"        # Windows PowerShell</code></pre>
+    <div class="expect"><b>You should see:</b> the project page with its id, and tabs for Rooms, Tickets, Settings and Connect. Rooms is empty.
+      <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of the dashboard's project page: a project card and an empty rooms list"><rect x="12" y="12" width="196" height="26" rx="5" fill="#171a20" stroke="#2d323c"/><rect x="20" y="21" width="70" height="8" rx="3" fill="#7db1ff"/><rect x="12" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="60" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="108" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="156" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="12" y="72" width="196" height="40" rx="5" fill="#171a20" stroke="#2d323c" stroke-dasharray="4 3"/></svg><span>The project page: its id, four tabs, and an empty Rooms list.</span></div></div></li>
 
-const lob = lobby({ project: 'my-first-game', liveHosts: ['mygame.com'], name: 'Player ' + Math.floor(Math.random() * 100) });
-const log = (t) =&gt; document.body.append(Object.assign(document.createElement('p'), { textContent: t }));
+  <li class="step" id="babylon-install"><h2>Install</h2>
+<pre><code>npm install @babylonjs/core @hawkesgen/net-babylon</code></pre>
+    <div class="expect"><b>You should see:</b>
+<pre><code>added 3 packages, and audited 4 packages in 4s
+found 0 vulnerabilities</code></pre></div></li>
 
-lob.when('status', ({ status }) =&gt; log('status: ' + status));
-lob.when('peer:join', (p) =&gt; log(p.name + ' arrived'));
-lob.on('chat', (text, from) =&gt; log(from.name + ': ' + text));
-lob.join('level-1');
-addEventListener('click', () =&gt; lob.send('chat', 'hello!'));   // click the page to say hello
-&lt;/script&gt;
-&lt;p&gt;Click anywhere to say hello.&lt;/p&gt;</code></pre>
-    <p>Open <code>http://localhost:3000</code> (the address <code>serve</code> prints) in two tabs, then click in one.</p>
-    <div class="expect"><b>You should see:</b> in each tab <code>status: online</code>; the first tab then adds <code>Player 42 arrived</code> (a different number) when the second opens; a click in either tab puts <code>Player 42: hello!</code> in both. Reload one tab and it rejoins by itself. Then look at your project's <b>Rooms</b> tab on the dashboard: <code>t-level-1</code> is listed with its two players (the <code>t-</code> marks a test room, free and apart from your real players).</div></li>
-
-  <li id="engines"><h2>Babylon.js and Unity (the same room)</h2>
-    <p><b>Babylon.js.</b> <code>npm install @babylonjs/core @hawkesgen/net-babylon</code>, then in your scene, with your player's mesh:</p>
+  <li class="step" id="babylon-connect"><h2>Connect</h2>
+    <p>In your scene code, with your player's mesh, start multiplayer. It asks for a ticket and opens the connection by itself:</p>
 <pre><code>import * as BABYLON from '@babylonjs/core';
 import { multiplayer } from '@hawkesgen/net-babylon';
 
-const mp = multiplayer(scene, { babylon: BABYLON, project: 'my-first-game', name: 'Ada', player: playerMesh, liveHosts: ['mygame.com'] });</code></pre>
-    <div class="expect"><b>You should see:</b> run your scene from <code>localhost</code> in two tabs; each tab shows the other player as a moving avatar, and the Rooms tab lists the room.</div>
-    <p><b>Unity.</b> Package Manager &gt; <b>+</b> &gt; <b>Add package from tarball</b>, choosing <a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a> (or the git URL on the <a href="/dashboard#unity">dashboard's Docs</a>). Put this on any GameObject and press Play:</p>
+const mp = multiplayer(scene, {
+  babylon: BABYLON, project: 'my-first-game', name: 'Ada',
+  player: playerMesh, liveHosts: ['mygame.com'],
+});
+mp.when('status', ({ status }) =&gt; console.log('status: ' + status));</code></pre>
+    <div class="expect"><b>You should see</b> in the browser console, with the page served from <code>localhost</code>:
+<pre><code>status: online</code></pre></div></li>
+
+  <li class="step" id="babylon-room"><h2>Join a room</h2>
+    <p>A room is an <code>area</code>. Add <code>area: 'first-room'</code> to the options (the default is <code>'lobby'</code>) and say who arrives:</p>
+<pre><code>const mp = multiplayer(scene, {
+  babylon: BABYLON, project: 'my-first-game', name: 'Ada',
+  player: playerMesh, area: 'first-room', liveHosts: ['mygame.com'],
+});
+mp.when('status', ({ status }) =&gt; console.log('status: ' + status));
+mp.when('peer:join', (p) =&gt; console.log(p.name + ' arrived'));</code></pre>
+    <div class="expect"><b>You should see:</b> the same console line, and on the dashboard the project's <b>Rooms</b> tab lists <code>t-first-room</code> with 1 player (the <code>t-</code> marks a free test room):
+<pre><code>status: online</code></pre></div></li>
+
+  <li class="step" id="babylon-second"><h2>See the second player</h2>
+    <p>Open the same page in a second browser tab. Give it a different <code>name</code> if you like; the default avatar is a capsule with the name over it.</p>
+    <div class="expect"><b>You should see:</b> in the first tab's console, and a capsule in the scene that moves when the other tab's player moves:
+<pre><code>Player 42 arrived</code></pre>
+      <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of the scene: your sphere and the other player's capsule on a floor"><rect x="0" y="0" width="220" height="124" fill="#0e1116"/><path d="M0 84 L220 84 L220 124 L0 124 Z" fill="#171a20"/><circle cx="70" cy="76" r="14" fill="#7db1ff"/><rect x="140" y="44" width="22" height="44" rx="11" fill="#4ade80"/><rect x="126" y="28" width="50" height="9" rx="4" fill="#eef0f3"/></svg><span>Your ball, and the other player as a green capsule with their name over it.</span></div></div></li>
+  </ol>
+  </section>
+
+  <section class="panel" id="panel-unity" role="tabpanel" aria-labelledby="tab-unity" data-tab="unity" hidden>
+  <p class="note">Unity 2021 or newer. The Editor joins your project's test rooms with no key; a web page on <code>localhost</code> is the second player.</p>
+  <ol class="steps">
+  <li class="step" id="unity-key"><h2>Get a free test project key</h2>
+    <p>Open the <a href="https://net.hawkesgames.com/">dashboard</a>, sign in (free), type a name such as <code>My first game</code> and press <b>Make my first project</b>. Its id (<code>my-first-game</code>) is your <code>project</code>. The Editor needs nothing more; keep a key for scripts and servers (<a href="https://net.hawkesgames.com/#account">Account</a> &gt; <b>Make my API key</b>, shown once):</p>
+<pre><code>export HAWKESGEN_KEY=paste_your_key_here          # macOS, Linux
+$env:HAWKESGEN_KEY = "paste_your_key_here"        # Windows PowerShell</code></pre>
+    <div class="expect"><b>You should see:</b> the project page with its id, and tabs for Rooms, Tickets, Settings and Connect. Rooms is empty.
+      <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of the dashboard's project page: a project card and an empty rooms list"><rect x="12" y="12" width="196" height="26" rx="5" fill="#171a20" stroke="#2d323c"/><rect x="20" y="21" width="70" height="8" rx="3" fill="#7db1ff"/><rect x="12" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="60" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="108" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="156" y="48" width="44" height="14" rx="4" fill="#2d323c"/><rect x="12" y="72" width="196" height="40" rx="5" fill="#171a20" stroke="#2d323c" stroke-dasharray="4 3"/></svg><span>The project page: its id, four tabs, and an empty Rooms list.</span></div></div></li>
+
+  <li class="step" id="unity-install"><h2>Install</h2>
+    <p>Package Manager &gt; <b>+</b> &gt; <b>Add package from tarball</b>, and choose <a href="/sdk/com.hawkes.net.tgz">com.hawkes.net.tgz</a> (or use the git URL on the <a href="/dashboard#unity">dashboard's Docs</a>).</p>
+<pre><code>https://net.hawkesgen.ai/sdk/com.hawkes.net.tgz</code></pre>
+    <div class="expect"><b>You should see:</b> <b>Hawkes Net</b> in the Package Manager's In Project list, and no red in the Console.
+      <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of Unity's Package Manager with Hawkes Net listed"><rect x="0" y="0" width="220" height="124" fill="#171a20"/><rect x="8" y="10" width="64" height="104" rx="4" fill="#0f1115"/><rect x="14" y="20" width="52" height="8" rx="3" fill="#2d323c"/><rect x="14" y="34" width="52" height="8" rx="3" fill="#7db1ff"/><rect x="14" y="48" width="52" height="8" rx="3" fill="#2d323c"/><rect x="82" y="10" width="130" height="104" rx="4" fill="#0f1115"/><rect x="92" y="22" width="80" height="10" rx="3" fill="#eef0f3"/><rect x="92" y="42" width="110" height="7" rx="3" fill="#2d323c"/><rect x="92" y="56" width="90" height="7" rx="3" fill="#2d323c"/></svg><span>Package Manager, In Project: Hawkes Net is there.</span></div></div></li>
+
+  <li class="step" id="unity-connect"><h2>Connect</h2>
+    <p>Put this on any GameObject and press Play. The lobby asks for a ticket and opens the connection when you join; its status says when it's up.</p>
 <pre><code>using UnityEngine;
 using Hawkes;
 
@@ -128,14 +192,36 @@ public class FirstRoom : MonoBehaviour {
     HawkesNetLobby lobby;
     void Start() {
         lobby = new HawkesNetLobby(new HawkesNetOptions { project = "my-first-game", name = "Ada" }, "mygame.com");
-        lobby.PeerJoined += (id, name) =&gt; Debug.Log($"{name} arrived");
-        lobby.Join("level-1");
+        lobby.StatusChanged += (s) =&gt; Debug.Log("status: " + s);
+        lobby.Join("lobby");
     }
     void OnDestroy() { lobby?.Leave(); }
 }</code></pre>
-    <div class="expect"><b>You should see:</b> in the Editor, with the web page from step 5 open in a tab, the Console prints <code>Player 42 arrived</code> and the web tab prints <code>Ada arrived</code>: a Unity player and a browser player in one room. (The Editor joins your project's test rooms with no key.)</div>
-    <p class="note">The exact namespace and options are in the package's readme (<a href="https://github.com/jgriffith3433/hawkesnet-unity">hawkesnet-unity</a>); the dashboard's Docs page has the same code.</p></li>
+    <div class="expect"><b>You should see</b> in the Console:
+<pre><code>status: online</code></pre></div></li>
+
+  <li class="step" id="unity-room"><h2>Join a room</h2>
+    <p>Join <code>first-room</code> instead of <code>lobby</code>, and log who arrives:</p>
+<pre><code>        lobby.PeerJoined += (id, who) =&gt; Debug.Log(who + " arrived");
+        lobby.Join("first-room");</code></pre>
+    <div class="expect"><b>You should see:</b> the same Console line, and on the dashboard the project's <b>Rooms</b> tab lists <code>t-first-room</code> with 1 player:
+<pre><code>status: online</code></pre></div></li>
+
+  <li class="step" id="unity-second"><h2>See the second player</h2>
+    <p>The second player can be a browser tab. Save this as <code>index.html</code>, serve the folder (<code>npx serve .</code>; the page must be on <code>localhost</code>) and open it while the Editor plays:</p>
+<pre><code>&lt;script type="module"&gt;
+import { lobby } from 'https://net.hawkesgen.ai/sdk/hawkes-net@1.mjs';
+
+const lob = lobby({ project: 'my-first-game', liveHosts: ['mygame.com'], name: 'Bob' });
+lob.when('peer:join', (p) =&gt; console.log(p.name + ' arrived'));
+lob.join('first-room');
+&lt;/script&gt;</code></pre>
+    <div class="expect"><b>You should see:</b> the Console prints the first line, and the browser console the second: a Unity player and a browser player in one room.
+<pre><code>Bob arrived
+Ada arrived</code></pre>
+      <div class="shot"><svg viewBox="0 0 220 124" role="img" aria-label="Thumbnail of the dashboard's Rooms tab listing first-room with two players"><rect x="12" y="12" width="196" height="100" rx="5" fill="#171a20" stroke="#2d323c"/><rect x="22" y="24" width="60" height="9" rx="3" fill="#7db1ff"/><circle cx="150" cy="29" r="6" fill="#4ade80"/><circle cx="170" cy="29" r="6" fill="#4ade80"/><rect x="22" y="48" width="176" height="1" fill="#2d323c"/><rect x="22" y="60" width="120" height="7" rx="3" fill="#2d323c"/></svg><span>The Rooms tab: <code>t-first-room</code> with two players.</span></div></div></li>
   </ol>
+  </section>
 
   <h2 id="next">What next</h2>
   <div class="grid">
@@ -148,5 +234,30 @@ public class FirstRoom : MonoBehaviour {
 
 <footer><div class="wrap"><span>Hawkes Net, part of <a href="https://hawkesgen.ai/">Hawkes Gen</a></span><span><a href="/">Home</a> · <a href="/dashboard">Dashboard</a> · <a href="/demo">Demo</a> · <a href="/healthz">Health</a></span></div></footer>
 <script src="/site.js" defer></script>
+<script>
+// The chosen engine tab is remembered in localStorage (it may be blocked: every use is in try/catch). No requests, no timers.
+(() => {
+  const KEY = 'hawkesnet.quickstart.tab';
+  const tabs = [...document.querySelectorAll('.tabs [role="tab"]')], panels = [...document.querySelectorAll('.panel')];
+  const names = tabs.map((t) => t.dataset.tab);
+  const show = (name, focus) => {
+    tabs.forEach((t) => { const on = t.dataset.tab === name; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; if (on && focus) t.focus(); });
+    panels.forEach((p) => { p.hidden = p.dataset.tab !== name; });
+    document.documentElement.dataset.quickstartTab = name;
+  };
+  let saved = null;
+  try { saved = localStorage.getItem(KEY); } catch { /* storage blocked: start on JavaScript */ }
+  show(names.includes(saved) ? saved : names[0]);
+  const pick = (name, focus) => { show(name, focus); try { localStorage.setItem(KEY, name); } catch { /* not remembered */ } };
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => pick(t.dataset.tab));
+    t.addEventListener('keydown', (e) => {
+      const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (d) { e.preventDefault(); pick(names[(i + d + names.length) % names.length], true); }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); pick(names[e.key === 'Home' ? 0 : names.length - 1], true); }
+    });
+  });
+})();
+</script>
 </body>
 </html>

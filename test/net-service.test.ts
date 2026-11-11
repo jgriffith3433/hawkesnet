@@ -594,18 +594,31 @@ test('the quickstart: linked from the landing page, and its first-room script re
   const ids = new Set([...page.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
   for (const m of page.matchAll(/href="#([^"]+)"/g)) assert.ok(ids.has(m[1]), `#${m[1]} exists`);
   for (const p of new Set([...page.matchAll(/href="(\/[^"#]*)/g)].map((m) => m[1]))) assert.equal((await fetch(`${endpoint}${p}`)).status, 200, p);
-  // run the doc's own script, against this service, and check it prints what the doc says it prints
-  const code = /<pre id="script-node"><code>([\s\S]*?)<\/code><\/pre>/.exec(page)![1].replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
-  const doc = /<b>You should see<\/b> \(the last three[\s\S]*?<pre><code>([\s\S]*?)<\/code><\/pre>/.exec(page)![1].trim().split('\n');
+  // run the doc's own script as Ada, then as Bob, against this service, and check each prints what the doc says it prints
+  const un = (h: string) => h.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+  const code = un(/<pre id="script-node"><code>([\s\S]*?)<\/code><\/pre>/.exec(page)![1]).replace('30000', '6000');
+  const docLines = (id: string) => un(new RegExp(`<pre id="${id}"><code>([\\s\\S]*?)</code></pre>`).exec(page)![1]).trim().split('\n');
   const key = addKey('quickstart', ['*']);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hn-qs-'));
   const file = path.join(dir, 'first-room.mjs');
   const sdk = new URL('../sdk/js/hawkes-net.mjs', import.meta.url).href;
   fs.writeFileSync(file, code.replace("'@hawkesgen/net'", `'${sdk}'`).replace('key: process.env.HAWKESGEN_KEY', `endpoint: '${endpoint}', key: process.env.HAWKESGEN_KEY`));
-  const out = await new Promise<string>((ok, no) => execFile(process.execPath, [file], { env: { ...process.env, HAWKESGEN_KEY: key }, timeout: 20_000 }, (e, so, se) => (e ? no(new Error(se)) : ok(so))));
-  const got = out.trim().split('\n');
-  assert.deepEqual(got.slice(0, 2), doc.slice(0, 2));
-  assert.deepEqual(got.slice(2).sort(), doc.slice(2).sort());
+  const run = (who: string) => {
+    let out = '';
+    const child = execFile(process.execPath, [file, who], { env: { ...process.env, HAWKESGEN_KEY: key }, timeout: 20_000 });
+    child.stdout!.on('data', (d) => { out += d; });
+    const done = new Promise<string>((ok, no) => { let err = ''; child.stderr!.on('data', (d) => { err += d; }); child.on('exit', (c) => (c === 0 ? ok(out) : no(new Error(err)))); });
+    return { done, firstLine: new Promise<void>((ok) => { const t = setInterval(() => { if (out.includes('\n')) { clearInterval(t); ok(); } }, 50); }) };
+  };
+  const ada = run('Ada');
+  await ada.firstLine;
+  const bob = run('Bob');
+  const [adaOut, bobOut] = await Promise.all([ada.done, bob.done]);
+  for (const [got, doc] of [[adaOut, docLines('expect-node-ada')], [bobOut, docLines('expect-node-bob')]] as const) {
+    const lines = got.trim().split('\n');
+    assert.deepEqual(lines.slice(0, 1), doc.slice(0, 1));
+    assert.deepEqual(lines.slice(1).sort(), doc.slice(1).sort());
+  }
 });
 
 test('the root is a public landing page with status and the three SDKs; the dashboard keeps its own names and /dashboard', async () => {

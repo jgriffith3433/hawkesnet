@@ -68,3 +68,17 @@ test('phone size: the header folds into a Menu button, wide things scroll inside
   assert.match(css, /\.codeblock, \.card pre[^{]*\{ min-width: 0; max-width: 100%/);
   assert.match(await (await fetch(hub.endpoint + '/docs/errors')).text(), /table\{display:block;overflow-x:auto\}/);
 });
+
+test('the quickstart: JS, Babylon and Unity tabs, five steps each with what you should see, the tab remembered in localStorage with try/catch', () => {
+  const html = read('quickstart.html');
+  assert.deepEqual([...html.matchAll(/role="tab"[^>]*data-tab="(\w+)"/g)].map((m) => m[1]), ['js', 'babylon', 'unity']);
+  for (const tab of ['js', 'babylon', 'unity']) {
+    const panel = new RegExp(`<section class="panel" id="panel-${tab}"[\\s\\S]*?</section>`).exec(html)![0];
+    const steps = panel.split('<li class="step"').slice(1);
+    assert.equal(steps.length, 5, `${tab} has five steps`);
+    for (const s of steps) { assert.match(s, /class="expect"/, `${tab}: a step shows its expected output`); assert.match(s, /<pre/, `${tab}: a step has code to copy`); }
+  }
+  assert.match(html, /try \{[^}]*localStorage\.getItem[^}]*\} catch/);
+  assert.match(html, /try \{ localStorage\.setItem[^}]*\} catch/);
+  assert.doesNotMatch(html.replace(/<pre\b[^>]*>[\s\S]*?<\/pre>/gi, ''), /setInterval|setTimeout/, 'no clock');
+});

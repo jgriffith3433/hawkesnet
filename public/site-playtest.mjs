@@ -60,6 +60,77 @@ export function judgePhone(p) {
   return `no sideways scroll at ${p.width} px, Menu opens the nav, smallest text ${p.minFont} px`;
 }
 
+export const QUICKSTART_TABS = ['JavaScript', 'Babylon.js', 'Unity'];
+export const QUICKSTART_KEY = 'hawkesnet.quickstart.tab';
+
+/**
+ * `q` is what quickstartReader read from the quickstart at 390 px: { tabs: [label], panels: [{ steps, withExpect, withCopy, scrollWidth, width, minFont, wideBlocks }],
+ * remembered: { chosen, afterReload } }. Three tabs (JavaScript, Babylon.js, Unity), five steps in each, every step with what you should see and a
+ * Copy button, nothing sideways at phone size with code scrolling inside its box, text 12 px or more, and the chosen tab back after a reload.
+ */
+export function judgeQuickstart(q) {
+  if (!q) throw new Error('no quickstart read');
+  if (JSON.stringify(q.tabs) !== JSON.stringify(QUICKSTART_TABS)) throw new Error(`the tabs are ${q.tabs.join(', ') || 'missing'}, wanted ${QUICKSTART_TABS.join(', ')}`);
+  q.panels.forEach((p, i) => {
+    const t = QUICKSTART_TABS[i];
+    if (p.steps !== 5) throw new Error(`the ${t} tab has ${p.steps} steps, wanted 5`);
+    if (p.withExpect !== p.steps) throw new Error(`${p.steps - p.withExpect} step(s) of the ${t} tab show no expected output`);
+    if (p.withCopy !== p.steps) throw new Error(`${p.steps - p.withCopy} step(s) of the ${t} tab have no Copy button`);
+    if (p.scrollWidth > p.width) throw new Error(`the ${t} tab scrolls sideways at ${p.width} px: it is ${p.scrollWidth} px wide`);
+    if (p.minFont < 12) throw new Error(`the ${t} tab has text as small as ${p.minFont} px (wanted 12 or more)`);
+    if (p.wideBlocks) throw new Error(`${p.wideBlocks} code block(s) of the ${t} tab don't scroll inside themselves`);
+  });
+  if (q.remembered.afterReload !== q.remembered.chosen) throw new Error(`chose the ${q.remembered.chosen} tab, but the page reopened on ${q.remembered.afterReload}`);
+  return `${q.tabs.join(', ')}: 5 steps each with expected output and Copy, no sideways scroll at ${q.panels[0].width} px, reopens on the ${q.remembered.chosen} tab`;
+}
+
+/** Opens the quickstart 390 px wide, goes through each tab, then chooses the last, reloads and reads which tab it opens on (the stored choice is put back after). */
+export async function quickstartReader(path = '/quickstart') {
+  const frame = document.createElement('iframe');
+  frame.title = 'Hawkes Net quickstart, under playtest';
+  frame.style.cssText = `position:fixed;left:-9999px;top:0;width:${PHONE_W}px;height:844px;border:0`;
+  frame.src = path;
+  const load = () => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error(`${path} did not load in 20 s`)), 20000); frame.addEventListener('load', () => { clearTimeout(t); res(); }, { once: true }); });
+  const first = load();
+  document.body.appendChild(frame);
+  let before = null, store = null;
+  try {
+    await first;
+    const w = () => frame.contentWindow, d = () => frame.contentDocument;
+    try { store = w().localStorage; before = store.getItem(QUICKSTART_KEY); store.removeItem(QUICKSTART_KEY); } catch { /* storage blocked */ }
+    const tabs = [...d().querySelectorAll('.tabs [role="tab"]')];
+    const panels = [];
+    for (const tab of tabs) {
+      tab.click();
+      const panel = d().getElementById(tab.getAttribute('aria-controls'));
+      const steps = [...panel.querySelectorAll('li.step')];
+      let min = 99;
+      const walker = d().createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const el = n.parentElement;
+        if (!n.textContent.trim() || !el || !el.getClientRects().length) continue;
+        min = Math.min(min, parseFloat(w().getComputedStyle(el).fontSize));
+      }
+      panels.push({
+        steps: steps.length,
+        withExpect: steps.filter((s) => s.querySelector('.expect')).length,
+        withCopy: steps.filter((s) => s.querySelector('.codeblock > button.copy')).length,
+        width: w().innerWidth, scrollWidth: d().documentElement.scrollWidth, minFont: min === 99 ? 0 : Math.round(min * 10) / 10,
+        wideBlocks: [...panel.querySelectorAll('pre')].filter((e) => e.getBoundingClientRect().right > w().innerWidth + 1 && !['auto', 'scroll'].includes(w().getComputedStyle(e).overflowX)).length,
+      });
+    }
+    const chosen = tabs.length ? tabs[tabs.length - 1].dataset.tab : '';
+    const again = load();
+    frame.contentWindow.location.reload();
+    await again;
+    const afterReload = d().querySelector('.tabs [aria-selected="true"]')?.dataset.tab ?? '';
+    return { tabs: tabs.map((t) => t.textContent.trim()), panels, remembered: { chosen, afterReload } };
+  } finally {
+    try { if (before === null) store?.removeItem(QUICKSTART_KEY); else store?.setItem(QUICKSTART_KEY, before); } catch { /* ignore */ }
+    frame.remove();
+  }
+}
+
 /** Opens `path` in a phone-wide frame, taps Menu, and measures the page. */
 export async function phoneReader(path) {
   const frame = document.createElement('iframe');
@@ -116,7 +187,7 @@ export async function frameReader(path, { origin = location.origin } = {}) {
  * `fetchFn` is fetch, `read(path)` is frameReader (both replaced in tests), `log` and `progress` are optional.
  */
 export async function siteChecks({ check, metric, log = () => {}, progress = () => {}, note = () => {}, origin = location.origin,
-  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader }) {
+  fetchFn = (u, init) => fetch(u, { ...init, cache: 'no-store' }), read = frameReader, phoneRead = phoneReader, quickRead = quickstartReader }) {
   await check('Status and version: the service is ok or degraded and has a version', async () => {
     const res = await fetchFn(`${origin}/v1/net/status`);
     if (!res.ok) throw new Error(`/v1/net/status answered ${res.status}`);
@@ -169,6 +240,13 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
     });
     progress(0.7 + 0.3 * (++j / PHONE_PAGES.length));
   }
+  await check('Quickstart (/quickstart): JS, Babylon and Unity tabs with five steps each, expected output and Copy on every step, the chosen tab remembered, nothing sideways at 390 px', async () => {
+    const q = await quickRead('/quickstart');
+    const why = judgeQuickstart(q);
+    metric('quickstartTabs', q.tabs.length); metric('quickstartSteps', q.panels.reduce((n, p) => n + p.steps, 0));
+    metric('quickstartOverflow', Math.max(0, ...q.panels.map((p) => p.scrollWidth - p.width)));
+    return why;
+  });
 }
 
 /**
@@ -176,7 +254,7 @@ export async function siteChecks({ check, metric, log = () => {}, progress = () 
  * others: scenarios() lists it, start('site') runs the checks above on their own, and state(), report() and stop() answer
  * for it while it is the current run. Every other id goes to the original start.
  */
-export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, where = location.host } = {}) {
+export function addSiteScenario(api, { origin = location.origin, fetchFn, read, phoneRead, quickRead, where = location.host } = {}) {
   const scenario = { id: 'site', title: 'The status and version, and the docs, quickstart and home pages: every link, the shared header, a Copy button on each code block', seconds: 40, tags: ['smoke', 'site'],
     description: 'Reads /v1/net/status once (ok or degraded, and the version), fetches /home, /docs/api and the quickstart and checks every link on them (this site by one fetch each, other sites by their href only, never opened), and checks each page has the shared header (Home, Docs, Quickstart, Demo) and a Copy button on every code block, then opens each page (and /demo) 390 px wide: no sideways scroll, the nav folds into a Menu that opens on tap, text readable. Also runs at the end of the smoke scenario.' };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
@@ -226,7 +304,7 @@ export function addSiteScenario(api, { origin = location.origin, fetchFn, read, 
     const me = run;
     event('start', 'site'); event('scene', 'Demo'); show();
     try {
-      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, note: (s) => { me.note = s; },
+      await siteChecks({ check, metric: (k, v) => { me.metrics[k] = v; }, origin, fetchFn, read, phoneRead, quickRead, note: (s) => { me.note = s; },
         log: (l) => { me.log.push(`${r1(now())}s ${l}`); if (me.log.length > 300) me.log.shift(); },
         progress: (p) => { me.state.progress = Math.max(0, Math.min(1, p)); me.moved = performance.now(); } });
       if (typeof location !== 'undefined' && location.origin !== origin) problem('the bot left the Hawkes Net site');

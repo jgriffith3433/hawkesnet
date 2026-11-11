@@ -12,6 +12,8 @@ after(async () => { await hub.stop(); });
 
 const ORIGIN = 'https://net.example';
 const GOOD_PHONE = { width: 390, scrollWidth: 390, menuShown: true, navHiddenBefore: true, navShownAfter: true, expandedAfter: true, minFont: 13, wideBlocks: 0 };
+const GOOD_PANEL = { steps: 5, withExpect: 5, withCopy: 5, width: 390, scrollWidth: 390, minFont: 12, wideBlocks: 0 };
+const GOOD_QUICK = { tabs: ['JavaScript', 'Babylon.js', 'Unity'], panels: [GOOD_PANEL, GOOD_PANEL, GOOD_PANEL], remembered: { chosen: 'unity', afterReload: 'unity' } };
 const GOOD_HEADER = ['Home', 'Docs', 'Quickstart', 'Demo'].map((text, i) => ({ text, path: ['/', '/docs/api', '/quickstart', '/demo'][i] }));
 
 test('judgeStatus: ok or degraded with a version', () => {
@@ -34,7 +36,7 @@ test('judgeHeader and judgeCopy say what is missing', () => {
 });
 
 /** Runs siteChecks with a fake service; returns the checks (name -> { ok, why }), the metrics and the fetched addresses. */
-async function runChecks(opts: { status?: unknown; pages?: Record<string, string>; read?: (p: string) => Promise<unknown>; phoneRead?: (p: string) => Promise<unknown> } = {}) {
+async function runChecks(opts: { status?: unknown; pages?: Record<string, string>; read?: (p: string) => Promise<unknown>; phoneRead?: (p: string) => Promise<unknown>; quickRead?: (p: string) => Promise<unknown> } = {}) {
   const fetched: string[] = [];
   const pages: Record<string, string> = opts.pages ?? {
     '/home': '<a href="/docs/api">d</a><a href="/quickstart">q</a><a href="https://github.com/x">g</a>',
@@ -54,13 +56,13 @@ async function runChecks(opts: { status?: unknown; pages?: Record<string, string
     try { lines[name] = { ok: true, why: String(await fn() ?? '') }; } catch (e) { lines[name] = { ok: false, why: String((e as Error).message) }; }
   };
   const read = opts.read ?? (async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }));
-  await m.siteChecks({ check, metric: (k: string, v: number) => { metrics[k] = v; }, origin: ORIGIN, fetchFn, read: read as never, phoneRead: (opts.phoneRead ?? (async () => GOOD_PHONE)) as never });
+  await m.siteChecks({ check, metric: (k: string, v: number) => { metrics[k] = v; }, origin: ORIGIN, fetchFn, read: read as never, phoneRead: (opts.phoneRead ?? (async () => GOOD_PHONE)) as never, quickRead: (opts.quickRead ?? (async () => GOOD_QUICK)) as never });
   return { lines, metrics, fetched };
 }
 
 test('siteChecks: a healthy site passes every check and reports status, version and links in metrics', async () => {
   const { lines, metrics, fetched } = await runChecks();
-  assert.equal(Object.keys(lines).length, 1 + 3 * 3 + 4, 'status, links, header and copy for each of home, docs and quickstart, and four phone-size checks');
+  assert.equal(Object.keys(lines).length, 1 + 3 * 3 + 4 + 1, 'status, links, header and copy for each of home, docs and quickstart, four phone-size checks and the quickstart tabs');
   for (const [name, l] of Object.entries(lines)) assert.ok(l.ok, `${name}: ${l.why}`);
   assert.match(lines['Status and version: the service is ok or degraded and has a version'].why, /status ok, version 1\.4\.0/);
   assert.deepEqual([metrics.status, metrics.versionMajor, metrics.versionMinor, metrics.versionPatch], [1, 1, 4, 0]);
@@ -99,7 +101,7 @@ test('addSiteScenario: the contract lists site, runs it, reports metrics; other 
     return { ok: true, status: 200, text: async () => '<a href="/demo">d</a>', body: null };
   };
   (globalThis as any).location = { origin: ORIGIN, host: 'net.example' };
-  m.addSiteScenario(api, { origin: ORIGIN, fetchFn, read: async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }), phoneRead: async () => GOOD_PHONE, where: 'net.example' });
+  m.addSiteScenario(api, { origin: ORIGIN, fetchFn, read: async () => ({ header: GOOD_HEADER, blocks: [{ copy: 1 }] }), phoneRead: async () => GOOD_PHONE, quickRead: async () => GOOD_QUICK, where: 'net.example' });
   assert.deepEqual(api.scenarios().map((s: any) => s.id), ['smoke', 'site']);
   await api.start('smoke');
   assert.deepEqual(calls, ['smoke']);
@@ -172,4 +174,17 @@ test('the demo: the page logs each tap, drag and stick drag; smoke drives the st
   assert.match(html, /stickDrag/);
   assert.match(html, /Dragging the floating stick moves this player/);
   assert.match(html, /Dragging on the arena moves this player/);
+});
+
+test('judgeQuickstart: three tabs of five steps with output and Copy, no sideways scroll, the chosen tab remembered', () => {
+  assert.match(m.judgeQuickstart(GOOD_QUICK), /JavaScript, Babylon\.js, Unity: 5 steps each.*reopens on the unity tab/);
+  const bad = (f: (q: any) => void) => { const q = JSON.parse(JSON.stringify(GOOD_QUICK)); f(q); return () => m.judgeQuickstart(q); };
+  assert.throws(bad((q) => { q.tabs.pop(); }), /tabs are/);
+  assert.throws(bad((q) => { q.panels[1].steps = 4; q.panels[1].withExpect = 4; q.panels[1].withCopy = 4; }), /Babylon\.js tab has 4 steps/);
+  assert.throws(bad((q) => { q.panels[0].withExpect = 4; }), /no expected output/);
+  assert.throws(bad((q) => { q.panels[2].withCopy = 3; }), /no Copy button/);
+  assert.throws(bad((q) => { q.panels[2].scrollWidth = 500; }), /scrolls sideways/);
+  assert.throws(bad((q) => { q.panels[0].minFont = 11; }), /11 px/);
+  assert.throws(bad((q) => { q.panels[0].wideBlocks = 1; }), /scroll inside/);
+  assert.throws(bad((q) => { q.remembered.afterReload = 'js'; }), /reopened on js/);
 });
