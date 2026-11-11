@@ -47,6 +47,64 @@
     #banner { position: static; transform: none; margin: 8px 12px 0; max-width: none; border-radius: 14px; display: block; }
     #banner[data-state=online] { display: none; }
   }
+  /* Network lab: folded card on desktop; bottom sheet behind a small Lab button on phones. Off by default. */
+  .lab-chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    padding: 2px 10px; border-radius: 99px; border: 1px solid var(--warn); color: var(--warn);
+    background: rgba(251, 191, 36, 0.08); letter-spacing: 0.02em;
+  }
+  .lab-chip[hidden] { display: none !important; }
+  .lab-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .lab-toggle { display: none; }
+  .lab-backdrop { display: none; }
+  .lab-panel {
+    margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+    overflow: hidden;
+  }
+  .lab-panel[hidden] { display: none !important; }
+  .lab-panel .lab-head {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px;
+    cursor: pointer; user-select: none;
+  }
+  .lab-panel .lab-head strong { font-size: 13px; }
+  .lab-panel .lab-head #lab-summary { color: var(--muted); font-size: 12px; flex: 1; min-width: 0; }
+  .lab-panel .lab-body { padding: 0 12px 12px; display: grid; gap: 10px; }
+  .lab-panel .lab-row { display: grid; gap: 6px; }
+  .lab-panel .lab-row span { color: var(--muted); font-size: 12px; }
+  .lab-panel .lab-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lab-panel .lab-opts button {
+    min-height: 36px; padding: 4px 10px; font-size: 13px;
+  }
+  .lab-panel .lab-opts button.on, .lab-panel .lab-opts button[aria-pressed="true"] {
+    border-color: var(--accent); color: var(--accent); background: rgba(125, 177, 255, 0.1); font-weight: 600;
+  }
+  .lab-panel .lab-close { display: none; min-width: 44px; min-height: 44px; }
+  .lab-panel:not(.open) .lab-body { display: none; }
+  .lab-panel.open .lab-body { display: grid; }
+  @media (max-width: 640px) {
+    .lab-toggle {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 44px; min-height: 44px; padding: 0 12px; font-weight: 600;
+    }
+    .lab-toggle[aria-expanded="true"], .lab-toggle.lab-active { border-color: var(--warn); color: var(--warn); }
+    .lab-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.45);
+      border: 0; padding: 0; margin: 0; cursor: pointer;
+    }
+    .lab-backdrop[hidden] { display: none !important; }
+    .lab-panel {
+      position: fixed; z-index: 41; left: 0; right: 0; bottom: 0; margin: 0;
+      border-radius: 16px 16px 0 0; border-bottom: 0;
+      padding-bottom: max(12px, var(--safe-b));
+      max-height: min(62vh, 420px); overflow: auto;
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    }
+    .lab-panel[hidden] { display: none !important; }
+    .lab-panel .lab-close { display: inline-flex; align-items: center; justify-content: center; margin-left: auto; }
+    .lab-panel .lab-head { cursor: default; padding: 14px 16px 8px; }
+    .lab-panel .lab-body { display: grid; padding: 4px 16px 16px; }
+    .lab-panel:not(.open) { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -59,11 +117,45 @@
     <div class="row arena-wrap" style="margin-top:12px"><canvas id="c" width="960" height="600"></canvas></div>
     <div class="row actions">
       <button type="button" class="panel-toggle" id="panel-toggle" aria-expanded="false" aria-controls="side" title="Room info">Room</button>
+      <button type="button" class="lab-toggle" id="lab-toggle" aria-expanded="false" aria-controls="lab-panel" title="Network lab">Lab</button>
+      <span class="lab-chip" id="lab-chip" hidden>Lab on</span>
       <button class="primary" id="share">Copy invite link</button>
       <button id="bots" disabled>Add 5 bots</button>
       <button id="migrate" disabled>Move to the relay</button>
       <button id="mute" type="button" aria-pressed="false">Mute</button>
       <button id="leave">Leave</button>
+    </div>
+    <button type="button" class="lab-backdrop" id="lab-backdrop" hidden aria-label="Close network lab"></button>
+    <div class="lab-panel" id="lab-panel" role="region" aria-label="Network lab">
+      <div class="lab-head">
+        <strong>Network lab</strong>
+        <span id="lab-summary">Off — this client only</span>
+        <button type="button" class="lab-close" id="lab-close" aria-label="Close">Close</button>
+      </div>
+      <div class="lab-body">
+        <div class="lab-row">
+          <span>Latency</span>
+          <div class="lab-opts" role="group" aria-label="Latency">
+            <button type="button" data-lab="latency" data-value="0" aria-pressed="true">0 ms</button>
+            <button type="button" data-lab="latency" data-value="100" aria-pressed="false">100 ms</button>
+            <button type="button" data-lab="latency" data-value="250" aria-pressed="false">250 ms</button>
+          </div>
+        </div>
+        <div class="lab-row">
+          <span>Jitter</span>
+          <div class="lab-opts" role="group" aria-label="Jitter">
+            <button type="button" data-lab="jitter" data-value="0" aria-pressed="true">0 ms</button>
+            <button type="button" data-lab="jitter" data-value="30" aria-pressed="false">30 ms</button>
+          </div>
+        </div>
+        <div class="lab-row">
+          <span>Loss</span>
+          <div class="lab-opts" role="group" aria-label="Loss">
+            <button type="button" data-lab="loss" data-value="0" aria-pressed="true">0%</button>
+            <button type="button" data-lab="loss" data-value="5" aria-pressed="false">5%</button>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
   <aside class="card side" id="side">
@@ -83,6 +175,10 @@
 </main>
 <script type="module">
   import { join } from '/sdk/hawkes-net.mjs';
+  import { createLab } from '/demo-lab.mjs';
+  const lab = createLab();
+  lab.mount();
+  window.hawkesNetLab = lab;
   const q = new URLSearchParams(location.search);
   const room = q.get('room') || `demo-${Math.random().toString(36).slice(2, 7)}`;
   // ?round=N (3–60): short play windows for playtests; default 60 s. Keep round/t/p2p/name when minting ?room=.
@@ -411,6 +507,7 @@
   renderBanner('start');
   joining.then((joined) => {
     net = joined;
+    lab.attach(net); // this client's sends/receives only; bots and other rooms are not wrapped
     joinInfo.ms = Math.round(performance.now() - joinT0);
     $('bots').disabled = false; $('migrate').disabled = false;
     window.hawkesNetDemo = net;
@@ -1018,7 +1115,23 @@
   };
   playtest.dropFor = (ms = 5000, who = 'me') => dropFor(who === 'me' ? net : who, ms);
   window.hawkesPlaytest.dropFor = playtest.dropFor;
+  playtest.lab = (opts) => lab.set(opts || {});
+  window.hawkesPlaytest.lab = playtest.lab;
   addSiteScenario(playtest);
+  const { addLabScenario } = await import('/lab-playtest.mjs');
+  addLabScenario(playtest, {
+    main: () => net,
+    openPeer: (name = 'Lab peer') => openPlaytestPeer(name, `lab-${Math.random()}`),
+    openInRoom: (r, name) => openInRoom(r, name || 'Other room', `lab-other-${Math.random()}`),
+    roomName: () => room,
+    myPos: () => [pos.x, 0, pos.y],
+    setPos: (x, y) => { pos.x = Math.max(15, Math.min(W - 15, x)); pos.y = Math.max(15, Math.min(H - 15, y)); },
+    keyHold: (k, ms) => key(k, ms),
+    stickDrag,
+    phone: () => phoneMode(),
+    canvas: () => cv,
+    untilReady: (until) => until(() => net && net.id && net.status === 'online', 15000, 'the demo to join its room'),
+  });
   const { addApiScenario } = await import('/api-playtest.mjs');
   addApiScenario(playtest);
   const { addFeedbackScenario } = await import('/feedback-playtest.mjs');
