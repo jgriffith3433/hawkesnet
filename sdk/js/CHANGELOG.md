@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.6
+
+- **Draining notice:** when the service restarts it pushes a `draining` notice to every client before closing; the SDK skips the doomed resume and rejoins its room at once with a fresh ticket, under the same room name. No polling.
+
 ## 1.4.5
 
 - **Migrate seed freshness:** before the host answers a migrate `seed` request it flushes live `sync.state` into the p2p room, and a new stream clears `st.t` with `st.sent` so the immediate post-migrate `_syncStates` is never rate-limited. Stops a stale relay seed (actions changed orbs/scores after the last `_s`) from leaving peers mismatched until the next 1 s upkeep tick.
