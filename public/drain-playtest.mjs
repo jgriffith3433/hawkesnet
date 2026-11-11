@@ -5,7 +5,7 @@
 // restart (SDK _onDrain), so the page skips resume, shows the banner, and rejoins with a fresh ticket.
 
 /**
- * Acceptance: short Reconnecting banner, back in the same room with the other player within 3 s.
+ * Acceptance: short Reconnecting banner, back in the same room with the other two players within 3 s.
  */
 export async function drainChecks({
   check, until, wait, metric, event = () => {}, scene = () => {},
@@ -13,31 +13,32 @@ export async function drainChecks({
 }) {
   const banner = () => (typeof window !== 'undefined' && window.hawkesNetBanner ? window.hawkesNetBanner() : { state: '', text: '', log: [] });
 
-  await check('Two players are online in one room before the drain', async () => {
+  // Three players, as in npm test's "a 3-player room surviving a simulated node restart" (test/drain-restart.test.ts).
+  const everyone = () => [main, ...(drainChecks._bots || [])];
+  const seesAll = (list) => list.every((p) => p.status === 'online' && list.every((q) => q === p || p.peers.has(q.id)));
+
+  await check('Three players are online in one room before the drain', async () => {
     const a = main;
     if (!a || a.status !== 'online') throw new Error('main player is not online');
     const name = roomName || a.room;
-    const bot = await openPeer();
-    await until(() => a.peers.has(bot.id) && bot.status === 'online' && bot.peers.has(a.id), 15000, 'both players to see each other');
+    const bots = [await openPeer('Drain peer 1'), await openPeer('Drain peer 2')];
+    drainChecks._bots = bots;
+    const all = [a, ...bots];
+    await until(() => seesAll(all), 15000, 'all three players to see each other');
     event('room-ready', name);
     scene('drain-ready');
-    metric('peersBefore', a.peers.size + 1);
-    // Keep the bot on the page object so the drain can hit both sockets.
-    drainChecks._bot = bot;
+    metric('peersBefore', all.length);
     drainChecks._room = name;
-    drainChecks._names = [a.name, bot.name];
-    return `room ${name}, ${a.name} + ${bot.name}`;
+    drainChecks._names = all.map((p) => p.name);
+    return `room ${name}, ${drainChecks._names.join(' + ')}`;
   });
 
   await check('A draining notice shows the Reconnecting banner (no resume)', async () => {
-    const a = main;
-    const bot = drainChecks._bot;
     const before = banner().log.length;
     const t0 = performance.now();
-    // Same control frame the node pushes on SIGTERM / deploy drain.
-    a._controlIn({ c: 'draining', why: 'node restart' });
-    bot._controlIn({ c: 'draining', why: 'node restart' });
-    await until(() => a.status === 'reconnecting' || banner().state === 'reconnecting', 3000, 'reconnecting status or banner');
+    // Same control frame the node pushes on SIGTERM / deploy drain, to every client at once.
+    for (const p of everyone()) p._controlIn({ c: 'draining', why: 'node restart' });
+    await until(() => main.status === 'reconnecting' || banner().state === 'reconnecting', 3000, 'reconnecting status or banner');
     await until(() => banner().state === 'reconnecting' || banner().log.slice(before).some((e) => e.state === 'reconnecting'), 3000, 'the banner to say Reconnecting');
     event('reconnecting', banner().text);
     scene('drain-reconnecting');
@@ -46,28 +47,28 @@ export async function drainChecks({
     return banner().text || 'reconnecting';
   });
 
-  await check('Both players are back in the same room within 3 s with their names', async () => {
-    const a = main;
-    const bot = drainChecks._bot;
+  await check('All three players are back in the same room within 3 s with their names', async () => {
+    const all = everyone();
     const room = drainChecks._room;
     const t0 = drainChecks._t0 || performance.now();
-    await until(() => a.status === 'online' && bot.status === 'online', 3000, 'both online again');
-    await until(() => a.peers.has(bot.id) && bot.peers.has(a.id), 3000, 'both to see each other again');
+    await until(() => seesAll(all), 3000, 'all three online and seeing each other again');
     const ms = Math.round(performance.now() - t0);
     metric('reconnectMs', ms);
+    metric('peersAfter', all.length);
     if (ms > 3000) throw new Error(`back in ${ms} ms, wanted under 3000`);
-    if (a.room !== room || bot.room !== room) throw new Error(`room drifted: ${a.room} / ${bot.room}, wanted ${room}`);
-    const names = [a.name, bot.name].sort();
+    const drifted = all.filter((p) => p.room !== room);
+    if (drifted.length) throw new Error(`room drifted: ${all.map((p) => p.room).join(' / ')}, wanted ${room}`);
+    const names = all.map((p) => p.name).sort();
     const expect = [...drainChecks._names].sort();
-    if (names[0] !== expect[0] || names[1] !== expect[1]) throw new Error(`names ${names.join(', ')}, wanted ${expect.join(', ')}`);
+    if (names.join('|') !== expect.join('|')) throw new Error(`names ${names.join(', ')}, wanted ${expect.join(', ')}`);
     await until(() => banner().state === 'online' || banner().state === '', 2000, 'the banner to clear');
     event('back', `${ms} ms in ${room}`);
     scene('drain-back');
     return `back in ${ms} ms, room ${room}, names ${names.join(' + ')}`;
   });
 
-  try { await drainChecks._bot?.leave(); } catch { /* gone */ }
-  drainChecks._bot = null;
+  for (const b of drainChecks._bots || []) { try { await b.leave(); } catch { /* gone */ } }
+  drainChecks._bots = null;
 }
 
 /**
@@ -82,10 +83,10 @@ export function addDrainScenario(api, {
 } = {}) {
   const scenario = {
     id: 'drain',
-    title: 'Deploy drain: Reconnecting banner, same room back within 3 s',
+    title: 'Deploy drain: 3-player room, Reconnecting banner, same room back within 3 s',
     seconds: 40,
     tags: ['full', 'multiplayer', 'drain'],
-    description: 'Two players in one room; injects the node\'s draining notice (as on SIGTERM / deploy), checks the Reconnecting banner, then that both are back in the same room with their names within 3 s.',
+    description: 'Three players in one room; injects the node\'s draining notice (as on SIGTERM / deploy), checks the Reconnecting banner, then that all three are back in the same room with their names within 3 s.',
   };
   const original = { scenarios: api.scenarios, start: api.start, state: api.state, report: api.report, stop: api.stop };
   let run = null;
