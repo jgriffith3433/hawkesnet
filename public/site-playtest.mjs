@@ -112,8 +112,8 @@ export async function quickstartReader(path = '/quickstart', { visible = true, o
     const tap = (el) => {
       el.scrollIntoView({ block: 'center' });
       const r = el.getBoundingClientRect(), o = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: w(), pointerId: 5, pointerType: 'touch', isPrimary: true };
-      el.dispatchEvent(new w().PointerEvent('pointerdown', { ...o, buttons: 1 })); el.dispatchEvent(new w().PointerEvent('pointerup', { ...o, buttons: 0 }));
-      el.dispatchEvent(new w().MouseEvent('click', o));
+      el.dispatchEvent(new (w().PointerEvent)('pointerdown', { ...o, buttons: 1 })); el.dispatchEvent(new (w().PointerEvent)('pointerup', { ...o, buttons: 0 }));
+      el.dispatchEvent(new (w().MouseEvent)('click', o));
     };
     const tabs = [...d().querySelectorAll('.tabs [role="tab"]')];
     const panels = [];
