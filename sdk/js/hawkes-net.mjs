@@ -21,6 +21,8 @@ import * as core from './hawkes-net-core.mjs';
  * @example import { VERSION } from '@hawkesgen/net'; console.log(VERSION);
  */
 export const VERSION = core.VERSION;
+/** Wait before reconnect try n: quick and steady for the 15 s grace (a cut of any length is over within ~1.5 s of the network returning, the place in the room kept), then slower. */
+const reconnectWait = (n) => (n < 12 ? Math.min(1200, 300 * 2 ** n) * (0.9 + Math.random() * 0.2) : Math.min(15_000, 2000 * 2 ** Math.min(3, n - 12)));
 /**
  * Wire protocol versions spoken by this client (`[3]`), sent on ticket requests and checked against `sdk_too_old`.
  * @sig const protocols: readonly number[]
@@ -668,7 +670,7 @@ class Room {
     if (this._draining) this.resume = null;
     const wait = this._draining
       ? Math.min(800, 150 * 2 ** Math.min(3, this.retry++))
-      : Math.min(15_000, 500 * 2 ** Math.min(5, this.retry++));
+      : reconnectWait(this.retry++);
     setTimeout(() => {
       if (this.closed || this.ws) return;
       if (this.resume) this._connect(`r=${encodeURIComponent(this.resume)}`);

@@ -996,6 +996,13 @@
           await c.until(() => window.hawkesNetDemoView.items.some((i) => i.id === bot.id && !i.away), 25000, 'the other player normal again');
           return 'ghosted, then normal';
         });
+        const { recoveryChecks } = await import('/recovery-playtest.mjs');
+        await recoveryChecks({
+          check: c.check, until: c.until, wait: c.wait, metric: c.metric, event: c.event || (() => {}),
+          main: c.main, watcher: bot, drop: dropFor, myPos: () => [pos.x, 0, pos.y],
+          score: (r, id) => orbGames.get(r)?.scores[id] || 0,
+          collect: () => { const o = orbGames.get(c.main)?.orbs[0]; if (o) { pos.x = o.x; pos.y = o.y; touchAt(c.main, o.x, o.y); } },
+        });
         await roundChecks({
           check: c.check, main: c.main, other: bot, until: c.until, wait: c.wait, metric: c.metric,
           event: c.event || (() => {}), openInRoom,
