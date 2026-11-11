@@ -195,3 +195,13 @@ test('judgeQuickstart: a code box must scroll inside itself and leave the page t
   assert.throws(() => m.judgeQuickstart(q({ moved: 0, page: 0, boxWidth: 330, contentWidth: 450 })), /did not scroll inside itself/);
   assert.throws(() => m.judgeQuickstart(q({ moved: 90, page: 40, boxWidth: 330, contentWidth: 450 })), /page 40 px wider/);
 });
+
+test('quickstartReader: taps use PointerEvent/MouseEvent, not `new` on an arrow that returns the frame window', () => {
+  // Beta r_273e167a7ec9 lost the site scenario with "w is not a constructor" when the tap helper
+  // constructed events via `new` on an arrow that returned the iframe window.
+  const src = fs.readFileSync(new URL('../public/site-playtest.mjs', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\n)\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(src, /new\s+\w+\s*\(\s*\)\s*\.(Pointer|Mouse)Event/);
+  assert.match(src, /new PointerEvent\(/);
+  assert.match(src, /new MouseEvent\(/);
+});

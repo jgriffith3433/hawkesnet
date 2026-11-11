@@ -106,21 +106,24 @@ export async function quickstartReader(path = '/quickstart', { visible = true, o
   let before = null, store = null;
   try {
     await first;
-    const w = () => frame.contentWindow, d = () => frame.contentDocument;
-    try { store = w().localStorage; before = store.getItem(QUICKSTART_KEY); store.removeItem(QUICKSTART_KEY); } catch { /* storage blocked */ }
+    // Use the frame's window/document objects. An earlier tap helper did `new` on an arrow that
+    // returned the window and threw "w is not a constructor" on beta r_273e167a7ec9.
+    const win = () => frame.contentWindow, doc = () => frame.contentDocument;
+    try { store = win().localStorage; before = store.getItem(QUICKSTART_KEY); store.removeItem(QUICKSTART_KEY); } catch { /* storage blocked */ }
     // A tap: pointer events and the click at the middle of the element, as a finger or mouse would send them.
+    // Construct events from the parent realm (same as lab-playtest.mjs); `view` names the frame's window.
     const tap = (el) => {
       el.scrollIntoView({ block: 'center' });
-      const r = el.getBoundingClientRect(), o = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: w(), pointerId: 5, pointerType: 'touch', isPrimary: true };
-      el.dispatchEvent(new (w().PointerEvent)('pointerdown', { ...o, buttons: 1 })); el.dispatchEvent(new (w().PointerEvent)('pointerup', { ...o, buttons: 0 }));
-      el.dispatchEvent(new (w().MouseEvent)('click', o));
+      const r = el.getBoundingClientRect(), o = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, view: win(), pointerId: 5, pointerType: 'touch', isPrimary: true };
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...o, buttons: 1 })); el.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+      el.dispatchEvent(new MouseEvent('click', o));
     };
-    const tabs = [...d().querySelectorAll('.tabs [role="tab"]')];
+    const tabs = [...doc().querySelectorAll('.tabs [role="tab"]')];
     const panels = [];
     let scrolled = null;
     for (const tab of tabs) {
       tap(tab);
-      const panel = d().getElementById(tab.getAttribute('aria-controls'));
+      const panel = doc().getElementById(tab.getAttribute('aria-controls'));
       const label = tab.textContent.trim();
       on('tab', `${label} tab chosen, ${panel && !panel.hidden ? 'its panel is showing' : 'its panel did NOT open'}`);
       await wait(pause);
@@ -137,34 +140,34 @@ export async function quickstartReader(path = '/quickstart', { visible = true, o
       const wide = [...panel.querySelectorAll('pre')].find((e) => e.scrollWidth > e.clientWidth + 4);
       if (wide && !scrolled) {
         wide.scrollIntoView({ block: 'center' });
-        const page0 = d().documentElement.scrollWidth, x0 = wide.scrollLeft;
+        const page0 = doc().documentElement.scrollWidth, x0 = wide.scrollLeft;
         for (let k = 1; k <= 4; k++) { wide.scrollLeft = Math.round((wide.scrollWidth - wide.clientWidth) * k / 4); await wait(120); }
-        scrolled = { moved: wide.scrollLeft - x0, page: d().documentElement.scrollWidth - page0, boxWidth: wide.clientWidth, contentWidth: wide.scrollWidth };
-        on('codescroll', `${label}: a code box scrolled ${scrolled.moved} px inside its own ${scrolled.boxWidth} px box (content ${scrolled.contentWidth} px); the page stayed ${d().documentElement.scrollWidth} px wide (${scrolled.page >= 1 ? 'GREW' : 'no sideways scroll'})`);
+        scrolled = { moved: wide.scrollLeft - x0, page: doc().documentElement.scrollWidth - page0, boxWidth: wide.clientWidth, contentWidth: wide.scrollWidth };
+        on('codescroll', `${label}: a code box scrolled ${scrolled.moved} px inside its own ${scrolled.boxWidth} px box (content ${scrolled.contentWidth} px); the page stayed ${doc().documentElement.scrollWidth} px wide (${scrolled.page >= 1 ? 'GREW' : 'no sideways scroll'})`);
         wide.scrollLeft = 0;
       }
       let min = 99;
-      const walker = d().createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+      const walker = doc().createTreeWalker(panel, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
         const el = n.parentElement;
         if (!n.textContent.trim() || !el || !el.getClientRects().length) continue;
-        min = Math.min(min, parseFloat(w().getComputedStyle(el).fontSize));
+        min = Math.min(min, parseFloat(win().getComputedStyle(el).fontSize));
       }
       panels.push({
         steps: steps.length,
         withExpect: steps.filter((s) => s.querySelector('.expect')).length,
         withCopy: steps.filter((s) => s.querySelector('.codeblock > button.copy')).length,
-        width: w().innerWidth, scrollWidth: d().documentElement.scrollWidth, minFont: min === 99 ? 0 : Math.round(min * 10) / 10,
-        wideBlocks: [...panel.querySelectorAll('pre')].filter((e) => e.getBoundingClientRect().right > w().innerWidth + 1 && !['auto', 'scroll'].includes(w().getComputedStyle(e).overflowX)).length,
+        width: win().innerWidth, scrollWidth: doc().documentElement.scrollWidth, minFont: min === 99 ? 0 : Math.round(min * 10) / 10,
+        wideBlocks: [...panel.querySelectorAll('pre')].filter((e) => e.getBoundingClientRect().right > win().innerWidth + 1 && !['auto', 'scroll'].includes(win().getComputedStyle(e).overflowX)).length,
       });
     }
     const chosen = tabs.length ? tabs[tabs.length - 1].dataset.tab : '';
-    d().documentElement.scrollTop = 0;
+    doc().documentElement.scrollTop = 0;
     on('remembered', `chose the ${chosen} tab, reloading the quickstart`);
     const again = load();
     frame.contentWindow.location.reload();
     await again;
-    const afterReload = d().querySelector('.tabs [aria-selected="true"]')?.dataset.tab ?? '';
+    const afterReload = doc().querySelector('.tabs [aria-selected="true"]')?.dataset.tab ?? '';
     on('remembered', `after the reload the page opened on the ${afterReload} tab (${afterReload === chosen ? 'the one chosen' : 'NOT the one chosen'})`);
     await wait(pause * 2);
     return { tabs: tabs.map((t) => t.textContent.trim()), panels, remembered: { chosen, afterReload }, codeScroll: scrolled };
