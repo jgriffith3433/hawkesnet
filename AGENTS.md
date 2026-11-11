@@ -80,6 +80,13 @@ poses both ways (the dot moved by real arrow keys), messages both ways, a move f
 hawkes-net), so a pass means the beta service works end to end. The same file is `example/net-playtest.mjs` in
 hawkesnet-js and hawkesnet-babylon: change all three.
 
+**`bad-network`** (`public/badnet-playtest.mjs`, scenario added from demo.html, shared bot untouched): this page's client gets the
+Network lab at 250 ms and 5% loss on the relay (the room moves there first: a p2p host hears the others off its own channels, not through the shim) for 60 s (after a 2 s warm-up, reported apart as `remoteJumpOnsetPx`), this page's player chases orbs
+by real input (the floating stick by touch at 390x844, arrow keys on a desktop run: Studio's phone twin is the touch leg) and a second
+client does too. Every drawn frame it measures the other player's dot in CSS px: the largest single-frame jump is the metric
+`remoteJumpMaxPx` and fails the run over 40 px (`JUMP_LIMIT_PX`); then the lab goes off and both clients' scores (round, phase, each
+player) must agree within 15 s (`scoreMatch`, `scoreYou`, `scoreOther`). The pure parts run in `test/badnet-playtest.test.ts`.
+
 ## Docs playtest
 
 `node tools/docs-playtest.mjs --url https://hawkesnet.hawkesgen.ai --key $HAWKESGEN_KEY` (`npm run docs-playtest`) runs the
