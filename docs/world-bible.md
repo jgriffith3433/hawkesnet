@@ -30,3 +30,7 @@ Ambient: court lines, cyan floor wash, motes, orb glow and the clock; collect ch
 2. **Chase the orbs** — score by touch; every collect is a burst, +1 pop and pickup sound on every screen.
 3. **Beat the clock** — the host’s sixty-second round ends; confetti and fanfare hit, the winner’s dot rings gold while their name and the board show, then the next round starts by itself.
 4. **Host hands off** — if the host drops mid-round, the clock and scores keep going for everyone still in the room.
+
+## Docs as play (developers)
+
+The quickstart’s JavaScript steps are executable canon: Ada then Bob join one room and print the lines under each “You should see”. The docs playtest (`tools/docs-playtest.mjs`) runs those snippets as written; `/demo`’s `site` scenario replays the same lines live so a playtest can see them.
