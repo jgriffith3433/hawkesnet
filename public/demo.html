@@ -1134,7 +1134,18 @@
   window.hawkesPlaytest.dropFor = playtest.dropFor;
   playtest.lab = (opts) => lab.set(opts || {});
   window.hawkesPlaytest.lab = playtest.lab;
-  addSiteScenario(playtest);
+  // Docs playtest evidence for the `site` scenario: Ada/Bob join live and print what each quickstart JS step says.
+  addSiteScenario(playtest, {
+    runDocs: async ({ plan, report, on }) => {
+      const { runLiveDocsSnippets } = await import('/docs-snippets.mjs');
+      const room = `docs-pt-${Date.now().toString(36)}`;
+      return runLiveDocsSnippets(plan, {
+        room,
+        joinFn: (r, name) => join(r, { project: 'netdemo', endpoint: location.origin, transport: 'relay', direct: false, name, role: 'player', config, sub: `docs-${name}-${Math.random()}`, log: false }),
+        report, on, timeout: 20000, quiet: 400,
+      });
+    },
+  });
   const { addLabScenario } = await import('/lab-playtest.mjs');
   addLabScenario(playtest, {
     main: () => net,

@@ -93,5 +93,6 @@ player) must agree within 15 s (`scoreMatch`, `scoreYou`, `scoreOther`). The pur
 quickstart's JavaScript snippets as written (headless, `@hawkesgen/net` from `sdk/js`) and checks each prints what its step
 says; then follows every link of `/quickstart` and `/docs/api` (this site must answer 200; other hosts must be Hawkes hosts
 or the hawkesnet repositories). It names the snippet or link that fails. Keep the quickstart's step ids (`js-connect`,
-`js-room`, `js-second`, `expect-node-ada/bob`) it reads. `test/docs-playtest.test.ts` runs it on the test service. Phone
-size (390 px) and the quickstart check stay in /demo's `site` scenario.
+`js-room`, `js-second`, `expect-node-ada/bob`) it reads. Shared parse/judge helpers live in `public/docs-snippets.mjs`.
+`test/docs-playtest.test.ts` runs it on the test service. Phone size (390 px), the quickstart tabs check, a named broken-link
+proof, and a live Ada/Bob join of the same JS steps (events: `snippet`) stay in /demo's `site` scenario.

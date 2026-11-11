@@ -60,12 +60,37 @@ async function runChecks(opts: { status?: unknown; pages?: Record<string, string
   return { lines, metrics, fetched };
 }
 
+// Minimal JS panel so the docs-snippet plan can be read without the real page's many same-site links.
+const QUICK_STEPS = `<section id="panel-js"><ol>
+<li class="step" id="js-connect"><h2>Connect</h2><pre><code>import { join } from '@hawkesgen/net';
+const name = process.argv[2] ?? 'Ada';
+</code></pre><div class="expect"><pre><code>Ada is in "first-room" on the relay</code></pre></div></li>
+<li class="step" id="js-room"><h2>Join a room and listen</h2><pre id="script-node"><code>import { join } from '@hawkesgen/net';
+</code></pre><div class="expect"><pre><code>Ada is in "first-room" on the relay</code></pre></div></li>
+<li class="step" id="js-second"><h2>See the second player</h2><div class="expect">
+<pre id="expect-node-ada"><code>Ada is in "first-room" on the relay
+Ada sees Bob arrive
+Ada heard Bob: hello Ada</code></pre>
+<pre id="expect-node-bob"><code>Bob is in "first-room" on the relay
+Bob sees Ada arrive
+Bob heard Ada: hello Bob</code></pre></div></li>
+</ol></section>`;
+
 test('siteChecks: a healthy site passes every check and reports status, version and links in metrics', async () => {
-  const { lines, metrics, fetched } = await runChecks();
-  assert.equal(Object.keys(lines).length, 1 + 3 * 3 + 4 + 1, 'status, links, header and copy for each of home, docs and quickstart, four phone-size checks and the quickstart tabs');
+  const { lines, metrics, fetched } = await runChecks({ pages: {
+    '/home': '<a href="/docs/api">d</a><a href="/quickstart">q</a><a href="https://github.com/x">g</a>',
+    '/docs/api': '<a href="/home">h</a><a href="#a">a</a><h2 id="a">a</h2>',
+    '/quickstart': `<a href="/demo">d</a><a href="/dashboard#key">k</a><a href="mailto:support@hawkesgen.ai">m</a>${QUICK_STEPS}`,
+  } });
+  // status + broken-link naming + (links/header/copy)×3 + phone×4 + quickstart tabs + docs snippets
+  assert.equal(Object.keys(lines).length, 1 + 1 + 3 * 3 + 4 + 1 + 1, 'status, docs-link naming, links/header/copy×3, phone×4, quickstart tabs, docs snippets');
   for (const [name, l] of Object.entries(lines)) assert.ok(l.ok, `${name}: ${l.why}`);
   assert.match(lines['Status and version: the service is ok or degraded and has a version'].why, /status ok, version 1\.4\.0/);
+  assert.match(lines['Docs playtest: a broken link fails naming the link'].why, /\/gone/);
+  assert.match(lines['Docs playtest: every quickstart JS snippet prints what its step says'].why, /js-connect/);
   assert.deepEqual([metrics.status, metrics.versionMajor, metrics.versionMinor, metrics.versionPatch], [1, 1, 4, 0]);
+  assert.equal(metrics.docsBrokenLinkNamed, 1);
+  assert.equal(metrics.docsSnippetSteps, 3);
   assert.equal(metrics.homeLinks, 3); assert.equal(metrics.docsLinks, 2); assert.equal(metrics.quickstartLinks, 3);
   assert.equal(metrics.quickstartLinksBroken, 0);
   assert.equal(metrics.docsCodeBlocks, 1); assert.equal(metrics.quickstartHeader, 1);
@@ -77,7 +102,7 @@ test('siteChecks: a healthy site passes every check and reports status, version 
 test('siteChecks: a broken link, a missing header, a block without Copy and a down service each fail their own check', async () => {
   const bad = await runChecks({
     status: { health: 'down', version: '1.4.0' },
-    pages: { '/home': '<a href="/gone">x</a>', '/docs/api': '<a href="/home">h</a>', '/quickstart': '<a href="/home">h</a>' },
+    pages: { '/home': '<a href="/gone">x</a>', '/docs/api': '<a href="/home">h</a>', '/quickstart': `<a href="/home">h</a>${QUICK_STEPS}` },
     read: async (p) => (p === '/docs/api' ? { header: [], blocks: [{ copy: 1 }] } : p === '/quickstart' ? { header: GOOD_HEADER, blocks: [{ copy: 0 }] } : { header: GOOD_HEADER, blocks: [{ copy: 1 }] }),
   });
   const failed = Object.entries(bad.lines).filter(([, l]) => !l.ok).map(([n]) => n);
@@ -95,9 +120,11 @@ test('siteChecks: a page that will not open fails its header and Copy checks wit
 test('addSiteScenario: the contract lists site, runs it, reports metrics; other scenarios go to the original', async () => {
   const calls: string[] = [];
   const api: any = { scenarios: () => [{ id: 'smoke' }], start: async (id: string) => { calls.push(id); }, state: () => ({ ready: true, status: 'idle' }), report: () => null, stop: () => {} };
+  const quickHtml = fs.readFileSync(new URL('../public/quickstart.html', import.meta.url), 'utf8');
   const fetchFn = async (url: string) => {
     const p = url.slice(ORIGIN.length);
     if (p === '/v1/net/status') return { ok: true, status: 200, json: async () => ({ health: 'degraded', version: '1.5.2' }), body: null };
+    if (p === '/quickstart') return { ok: true, status: 200, text: async () => quickHtml, body: null };
     return { ok: true, status: 200, text: async () => '<a href="/demo">d</a>', body: null };
   };
   (globalThis as any).location = { origin: ORIGIN, host: 'net.example' };
@@ -119,7 +146,8 @@ test('addSiteScenario: the contract lists site, runs it, reports metrics; other 
 
 test('the demo page wires the site scenario and ends smoke with the checks; the shared bot file is untouched; the hub serves the module', async () => {
   const html = fs.readFileSync(new URL('../public/demo.html', import.meta.url), 'utf8');
-  assert.match(html, /addSiteScenario\(playtest\)/);
+  assert.match(html, /addSiteScenario\(playtest/);
+  assert.match(html, /runDocs:/);
   assert.match(html, /await siteChecks\(/);
   assert.ok(html.indexOf('await peerChecks(c)') < html.indexOf('await siteChecks('), 'the site checks come after the peer checks, at the end of smoke');
   assert.doesNotMatch(fs.readFileSync(new URL('../public/demo-playtest.mjs', import.meta.url), 'utf8'), /site-playtest|siteChecks/);
@@ -128,6 +156,9 @@ test('the demo page wires the site scenario and ends smoke with the checks; the 
   const r = await fetch(`${hub.url}/site-playtest.mjs`);
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-type') ?? '', /javascript/);
+  const docs = await fetch(`${hub.url}/docs-snippets.mjs`);
+  assert.equal(docs.status, 200);
+  assert.match(docs.headers.get('content-type') ?? '', /javascript/);
 });
 
 test('judgePhone: passes a folded, readable page and names what is wrong otherwise', async () => {
