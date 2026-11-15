@@ -124,6 +124,8 @@ export async function startHub(o: HubOptions = {}) {
   const badnetPlaytest = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'badnet-playtest.mjs');
   const docsSnippets = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'docs-snippets.mjs');
   const landing = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'landing.html');
+  // The bare front page (2026-11-14): only a full-screen mathematical picture, no links; real visitors with a query or hash, and bots, go to /home.
+  const front = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'front.html');
   const quickstart = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'quickstart.html');
   const siteCss = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.css');
   const siteJs = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'site.js');
@@ -144,13 +146,13 @@ export async function startHub(o: HubOptions = {}) {
       res.writeHead(st.up ? 200 : 503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       return void res.end(JSON.stringify({ ok: st.up, service: 'hawkes-net', version: st.version, ...build, usageWaiting: outbox.length }));
     }
-    // The front door: on the relay's own names a public landing page (what Hawkes Net is, its live status, the SDKs); on the
-    // dashboard's names (net.hawkesgames.com, net-beta.hawkesgames.com) the developer dashboard, which is also at /dashboard.
+    // The front door: on the relay's own names a bare full-screen picture (public/front.html, no links); on the dashboard's
+    // names (net.hawkesgames.com, net-beta.hawkesgames.com) the developer dashboard, which is also at /dashboard.
     const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(String(req.headers.host ?? '').split(':')[0]);
-    // /home is the landing page on every name (the header's Home link: on the dashboard's names "/" is the dashboard).
+    // /home is the landing page (what Hawkes Net is, its live status, the SDKs) on every name: the header's Home link.
     if (route === '/' || route === '/dashboard' || route === '/home') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
-      return void res.end(fs.readFileSync(route === '/dashboard' || (route === '/' && dashHost) ? dashboard : landing));
+      return void res.end(fs.readFileSync(route === '/dashboard' || (route === '/' && dashHost) ? dashboard : route === '/' ? front : landing));
     }
     // The look and the header every page shares (public/site.css, public/site.js).
     if (route === '/site.css' || route === '/site.js') {

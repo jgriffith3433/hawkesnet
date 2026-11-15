@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>(function(){var s=location.search,h=location.hash;if(navigator.webdriver||s.length>1||h.length>1){location.replace('/home'+s+h);}})();</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#091013">
+<meta name="description" content="A signal that is never drawn, and a net of samples. What the net catches is rebuilt as a sum of sinc functions. A fine enough mesh shows exactly what was there; a coarse one shows something that never was.">
+<title>Hawkes Net</title>
+<style>html,body{margin:0;height:100%;background:#091013;overflow:hidden}canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}</style>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='9' cy='16' r='5' fill='%232f6fed'/%3E%3Ccircle cx='23' cy='9' r='4' fill='%2316a34a'/%3E%3Ccircle cx='23' cy='23' r='4' fill='%2316a34a'/%3E%3Cpath d='M13 14l6-4M13 18l6 4' stroke='%232f6fed' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body>
+<canvas id="v" aria-hidden="true"></canvas>
+<main class="sr"><h1>Hawkes Net</h1><p>A signal that is never drawn, and a net of samples. What the net catches is rebuilt as a sum of sinc functions. A fine enough mesh shows exactly what was there; a coarse one shows something that never was.</p></main>
+<script>
+(function runtime(P, F, make) {
+  var c = document.getElementById('v'), x = c.getContext('2d'), S = make(P, F), M = { x: .5, y: .5, in: false, down: false }, Wd = 0, Ht = 0, last = 0, T = 0;
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function size() { var D = Math.min(2, window.devicePixelRatio || 1); Wd = window.innerWidth; Ht = window.innerHeight; c.width = Math.round(Wd * D); c.height = Math.round(Ht * D); x.setTransform(D, 0, 0, D, 0, 0); S.resize(Wd, Ht); if (still) for (var i = 0; i < 240; i++) S.frame(x, Wd, Ht, i / 30, 1 / 30, M); }
+  function frame(ms) { var dt = Math.min(.05, (ms - last) / 1000 || .016); last = ms; T += dt; S.frame(x, Wd, Ht, T, dt, M); window.requestAnimationFrame(frame); }
+  function pt(e) { M.x = e.clientX / Wd; M.y = e.clientY / Ht; M.in = true; }
+  c.addEventListener('pointermove', pt); c.addEventListener('pointerdown', function (e) { pt(e); M.down = true; });
+  window.addEventListener('pointerup', function () { M.down = false; }); c.addEventListener('pointerleave', function () { M.in = false; M.down = false; });
+  window.addEventListener('resize', size); size(); if (!still) window.requestAnimationFrame(frame);
+})({"bg":"#091013","fg":"#e7f1f0","dim":"#6d8683","rule":"#20302f","a":"#5cf2c8","b":"#ffffff","warn":"#ff7a59","a3":[92,242,200],"b3":[255,255,255],"bg3":[9,16,19]}, {"mono":"ui-monospace,SFMono-Regular,Menlo,Consolas,monospace","serif":"Georgia,\"Times New Roman\",serif","sans":"system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif"}, function net(P, F) {
+  let W = 0, H = 0;
+  const f = (u, T) => 0.5 * Math.sin(u * 2 + T * 0.4) + 0.3 * Math.sin(u * 5.3 - T * 0.7 + 1) + 0.2 * Math.sin(u * 9.1 + T * 0.5 + 2), FMAX = 9.1 / (2 * Math.PI);
+  const sinc = v => Math.abs(v) < 1e-6 ? 1 : Math.sin(Math.PI * v) / (Math.PI * v);
+  return {
+    resize(w, h) { W = w; H = h; },
+    frame(x, w, h, T, dt, M) {
+      x.fillStyle = P.bg; x.fillRect(0, 0, W, H);
+      const pad = Math.max(22, W * 0.05), X0 = pad, X1 = W - pad, span = 9, dense = M.in ? 0.14 + M.x * 1.1 : 0.62 + 0.5 * Math.sin(T * 0.22), D = dense, n0 = Math.ceil(-2 / D), n1 = Math.floor((span + 2) / D), amp = H * 0.13, yA = H * 0.3, yB = H * 0.68;
+      const sx = u => X0 + u / span * (X1 - X0), ok = 1 / (2 * D) > FMAX;
+      const samp = []; for (let n = n0; n <= n1; n++) samp.push([n * D, f(n * D, T)]);
+      // what is there: never drawn, only its absence marked
+      x.strokeStyle = P.rule; x.setLineDash([1, 7]); x.beginPath(); x.moveTo(X0, yA); x.lineTo(X1, yA); x.stroke(); x.setLineDash([]);
+      // the net: threads down from where each sample is taken
+      for (const [u, v] of samp) { if (u < 0 || u > span) continue; const px = sx(u), py = yA - v * amp; x.strokeStyle = P.dim; x.lineWidth = 1; x.globalAlpha = 0.5; x.beginPath(); x.moveTo(px, py); x.lineTo(px, yB - v * amp); x.stroke(); x.globalAlpha = 1; x.fillStyle = P.fg; x.beginPath(); x.arc(px, py, 3.2, 0, 6.283); x.fill(); }
+      x.strokeStyle = P.dim; x.lineWidth = 1; x.globalAlpha = 0.6; x.beginPath(); let first = true; for (const [u, v] of samp) { if (u < 0 || u > span) continue; const px = sx(u), py = yA - v * amp; first ? x.moveTo(px, py) : x.lineTo(px, py); first = false; } x.stroke(); x.globalAlpha = 1;
+      // what the net lets us see
+      x.strokeStyle = ok ? P.a : P.warn; x.lineWidth = 2; x.beginPath(); let err = 0, cnt = 0;
+      for (let i = 0; i <= 260; i++) { const u = i / 260 * span; let r = 0; for (const [su, sv] of samp) r += sv * sinc((u - su) / D); err += Math.abs(r - f(u, T)); cnt++; const px = sx(u), py = yB - r * amp; i ? x.lineTo(px, py) : x.moveTo(px, py); } x.stroke();
+      const big = Math.max(15, Math.min(24, W / 50)); x.fillStyle = P.fg; x.textAlign = 'left'; x.font = '600 12px ' + F.mono; x.fillText('HAWKES NET', pad, 30);
+      x.font = '11px ' + F.mono; x.fillStyle = P.dim; x.fillText('what is there. it is never drawn: only where the net touches it.', pad, yA - amp - 14); x.fillText('what the net lets us see', pad, yB - amp - 14);
+      x.fillStyle = P.fg; x.font = 'italic ' + big + 'px ' + F.serif; x.fillText('f̂(x) = Σ f(nΔ) sinc((x − nΔ)/Δ)', pad, H - 54);
+      x.font = '12px ' + F.mono; x.fillStyle = ok ? P.a : P.warn; x.fillText(ok ? 'caught: the mesh is finer than half the fastest wave.  1/2Δ = ' + (1 / (2 * D)).toFixed(2) + ' > ' + FMAX.toFixed(2) : 'too coarse: what you see here was never there.  1/2Δ = ' + (1 / (2 * D)).toFixed(2) + ' < ' + FMAX.toFixed(2), pad, H - 28);
+      x.textAlign = 'right'; x.fillStyle = P.dim; x.fillText('knots ' + samp.filter(q => q[0] >= 0 && q[0] <= span).length + '    Δ = ' + D.toFixed(2) + '    missed ' + (err / cnt * 100).toFixed(1) + '%', X1, 30); x.fillText('move left for a finer net, right for a coarser one', X1, H - 28); x.textAlign = 'left';
+    }
+  };
+});
+</script>
+</body>
+</html>

@@ -2,10 +2,10 @@
 // the Copy button on every code block, including blocks a page draws later. It makes no requests and runs no timers:
 // the header is made once, blocks are found by an observer, and "Copied" ends on the CSS animation's own event.
 (() => {
-  const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(location.hostname); // there "/" is the dashboard, so Home is /home
-  const links = [['home', dashHost ? '/home' : '/', 'Home'], ['docs', '/docs/api', 'Docs'], ['quickstart', '/quickstart', 'Quickstart'], ['demo', '/demo', 'Demo']];
+  const dashHost = /^net(-beta)?\.hawkesgames\.com$/i.test(location.hostname); // there "/" is the dashboard, and on the others "/" is the bare front page: Home is /home on every name
+  const links = [['home', '/home', 'Home'], ['docs', '/docs/api', 'Docs'], ['quickstart', '/quickstart', 'Quickstart'], ['demo', '/demo', 'Demo']];
   const p = location.pathname.replace(/\/+$/, '') || '/';
-  const here = p === '/' || p === '/home' ? 'home' : p.startsWith('/docs') ? 'docs' : p === '/quickstart' ? 'quickstart' : p === '/demo' ? 'demo' : '';
+  const here = p === '/home' ? 'home' : p.startsWith('/docs') ? 'docs' : p === '/quickstart' ? 'quickstart' : p === '/demo' ? 'demo' : '';
   const header = document.createElement('header');
   header.className = 'site-header';
   header.innerHTML = '<div class="in"><a class="brand" href="' + links[0][1] + '">Hawkes Net</a><button class="menu" type="button" aria-expanded="false" aria-controls="site-nav">Menu</button><nav id="site-nav" aria-label="Hawkes Net">'

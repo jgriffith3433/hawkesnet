@@ -30,7 +30,7 @@ test('contrast helpers: black on white is 21:1, alpha is laid over what is under
 });
 
 test('every page links the shared stylesheet and script, and none has a timer that repeats', async () => {
-  for (const p of ['/', '/home', '/docs/api', '/docs/errors', '/quickstart', '/demo', '/dashboard']) {
+  for (const p of ['/home', '/docs/api', '/docs/errors', '/quickstart', '/demo', '/dashboard']) {
     const html = await (await fetch(hub.endpoint + p)).text();
     assert.match(html, /<link rel="stylesheet" href="\/site\.css">/, `${p} links site.css`);
     assert.match(html, /<script src="\/site\.js" defer><\/script>/, `${p} loads site.js`);
@@ -40,7 +40,8 @@ test('every page links the shared stylesheet and script, and none has a timer th
     assert.ok(!/prefers-color-scheme|data-theme="light"/.test(html), `${p} has one theme`);
   }
   const home = await (await fetch(hub.endpoint + '/home')).text();
-  assert.equal(home, await (await fetch(hub.endpoint + '/')).text(), '/home is the landing page');
+  assert.match(home, /Put your game online/, '/home is the landing page');
+  assert.notEqual(home, await (await fetch(hub.endpoint + '/')).text(), '/ is the bare front page');
 });
 
 test('/site.css and /site.js are served, and the script makes no request and has no timer', async () => {

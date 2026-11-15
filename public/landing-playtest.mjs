@@ -99,7 +99,7 @@ export function over(top, under) { const a = top[3]; return [0, 1, 2].map((i) =>
 export function luminance(c) { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); }
 /** WCAG contrast ratio of two opaque colors. */
 export function contrastRatio(a, b) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
-export const SITE_PAGES = [['Home', '/'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo'], ['Dashboard', '/dashboard']];
+export const SITE_PAGES = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo'], ['Dashboard', '/dashboard']];
 
 /** Installs window.hawkesPlaytest on the landing page. `o.landing` is the page's own status record (see landing.html). */
 export function installLandingPlaytest(o = {}) {
@@ -330,7 +330,7 @@ export function installLandingPlaytest(o = {}) {
   }
 
   async function site() {
-    const pages = [['Home', '/'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo?room=site-pt-' + Math.random().toString(36).slice(2, 7)], ['Dashboard', '/dashboard']];
+    const pages = [['Home', '/home'], ['Docs', '/docs/api'], ['Quickstart', '/quickstart'], ['Demo', '/demo?room=site-pt-' + Math.random().toString(36).slice(2, 7)], ['Dashboard', '/dashboard']];
     const headers = [];
     for (let i = 0; i < pages.length; i++) {
       try { const r = await sitePage(pages[i][0], pages[i][1]); headers.push(r.header); } catch (e) { await check(`${pages[i][0]}: opened`, () => { throw e; }); }

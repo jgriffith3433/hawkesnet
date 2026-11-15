@@ -583,7 +583,7 @@ test('an option given as undefined keeps its default: endpoint: undefined goes t
 });
 
 test('the quickstart: linked from the landing page, and its first-room script really puts two clients in one room', async () => {
-  const root = await fetch(`${endpoint}/`).then((r) => r.text());
+  const root = await fetch(`${endpoint}/home`).then((r) => r.text());
   const hrefs = [...root.matchAll(/href="(\/quickstart)"/g)];
   assert.ok(hrefs.length >= 3, 'the landing page links to the quickstart (nav, button, footer)');
   const res = await fetch(`${endpoint}/quickstart`);
@@ -621,8 +621,8 @@ test('the quickstart: linked from the landing page, and its first-room script re
   }
 });
 
-test('the root is a public landing page with status and the three SDKs; the dashboard keeps its own names and /dashboard', async () => {
-  const root = await fetch(`${endpoint}/`).then((r) => r.text());
+test('/home is the public landing page with status and the three SDKs; the dashboard keeps its own names and /dashboard', async () => {
+  const root = await fetch(`${endpoint}/home`).then((r) => r.text());
   assert.match(root, /Put your game online/);
   assert.match(root, /hawkesnet-js/); assert.match(root, /hawkesnet-babylon/); assert.match(root, /hawkesnet-unity/);
   assert.doesNotMatch(root, /setInterval|setTimeout/, 'the landing page never polls');
@@ -633,6 +633,14 @@ test('the root is a public landing page with status and the three SDKs; the dash
     import('node:http').then(({ default: http }) => http.get({ host: u.hostname, port: u.port, path: '/', headers: { Host: 'net.hawkesgames.com' } }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => ok(b)); }).on('error', no));
   });
   assert.match(onDashName, /The dashboard of Hawkes Net/);
+  // The bare front page at /: a full-screen picture, no links, no buttons, no timers; the gate sends bots, queries and hashes to /home.
+  const front = await fetch(`${endpoint}/`);
+  assert.equal(front.status, 200);
+  assert.match(front.headers.get('content-type') ?? '', /text\/html/);
+  const frontHtml = await front.text();
+  assert.ok(frontHtml.includes("location.replace('/home'"), 'the gate sends bots, queries and hashes to /home');
+  assert.doesNotMatch(frontHtml, /<a |<button/, 'the front page has no links or buttons');
+  assert.doesNotMatch(frontHtml, /setInterval|setTimeout/, 'the front page has no timers');
   const st = await fetch(`${endpoint}/v1/net/status`).then((r) => r.json());
   assert.equal(st.health, 'ok');
   for (const p of ['/sdk/hawkes-net@1.mjs', '/sdk/com.hawkes.net.tgz']) assert.equal((await fetch(`${endpoint}${p}`)).status, 200, p);
